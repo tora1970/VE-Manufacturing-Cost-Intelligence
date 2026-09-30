@@ -1,52 +1,78 @@
+import streamlit as st
+
+st.set_page_config(
+    page_title="VE Manufacturing Cost Intelligence",
+    page_icon="📊",
+    layout="wide"
+)
+
 # =====================================================
-# TECHNOLOGY TAB
+# HEADER
+# =====================================================
+
+st.title("VE Manufacturing Cost Intelligence")
+st.caption("Digital Cost Intelligence Platform")
+
+# =====================================================
+# MAIN NAVIGATION
+# =====================================================
+
+tab_technology, tab_masterdata, tab_system = st.tabs(
+    [
+        "Technologies",
+        "Masterdata",
+        "System"
+    ]
+)
+
+# =====================================================
+# TECHNOLOGIES
 # =====================================================
 
 with tab_technology:
 
     st.header("Technology Cost Models")
 
-    if (
-        masterdata.technologies is not None
-        and not masterdata.technologies.empty
-    ):
+    st.info(
+        "Technology-specific cost models will be launched from here."
+    )
 
-        tech_column = None
+    technology = st.selectbox(
+        "Select Technology",
+        [
+            "HPDC",
+            "Machining",
+            "Injection Molding",
+            "LPDC",
+            "Gravity Die Casting",
+            "Sheet Metal"
+        ]
+    )
 
-        for candidate in [
-            "Technology_Name",
-            "Technology",
-            "Name"
-        \]:
-            if candidate in masterdata.technologies.columns:
-                tech_column = candidate
-                break
+    st.write(f"Selected technology: {technology}")
 
-        if tech_column:
+# =====================================================
+# MASTERDATA
+# =====================================================
 
-            technologies = sorted(
-                masterdata.technologies[tech_column]
-                .dropna()
-                .unique()
-            )
+with tab_masterdata:
 
-            selected_technology = st.selectbox(
-                "Select Technology",
-                technologies
-            )
+    st.header("Masterdata")
 
-            st.success(
-                f"Selected Technology: {selected_technology}"
-            )
+    st.info(
+        "Masterdata integration will be added in the next step."
+    )
 
-        else:
+# =====================================================
+# SYSTEM
+# =====================================================
 
-            st.error(
-                "No valid technology column found."
-            )
+with tab_system:
 
-    else:
+    st.header("System")
 
-        st.warning(
-            "Technology masterdata not loaded."
-        )
+    st.success("Application running successfully")
+
+    st.write("Repository: VE-Manufacturing-Cost-Intelligence")
+
+    st.write("Status: OK")
