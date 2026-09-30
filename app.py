@@ -131,7 +131,8 @@ with tab_technology:
             if candidate in masterdata.technologies.columns:
                 tech_column = candidate
                 break
-
+        \]:
+        
         if tech_column:
 
             technologies = sorted(
