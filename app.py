@@ -62,20 +62,56 @@ with tab_technology:
     st.header("Technology Cost Models")
 
     technology = st.selectbox(
-        "Select Technology",
-        [
-            "HPDC",
-            "Machining",
-            "Injection Molding",
-            "LPDC",
-            "Gravity Die Casting",
-            "Sheet Metal"
-        ]
-    )
+            if technology == "HPDC":
 
-    st.info(
-        f"Selected technology: {technology}"
-    )
+        )
+        st.subheader("HPDC Cost Model")
+
+        material = st.selectbox(
+            "Material",
+            masterdata.materials["Material_Name"]
+        )
+
+        annual_volume = st.number_input(
+            "Annual Volume",
+            min_value=1,
+            value=10000
+        )
+
+        part_weight = st.number_input(
+            "Part Weight (kg)",
+            min_value=0.001,
+            value=0.500,
+            format="%.3f"
+        )
+
+        region_column = masterdata.regions.columns[0]
+
+        region = st.selectbox(
+            "Region",
+            masterdata.regions[region_column]
+        )
+
+        st.markdown("---")
+
+        if st.button(
+            "Calculate HPDC Cost"
+        ):
+
+            st.success(
+                "HPDC input validated successfully"
+            )
+
+            st.write("Material:", material)
+            st.write("Volume:", annual_volume)
+            st.write("Weight (kg):", part_weight)
+            st.write("Region:", region)
+
+    else:
+
+        st.info(
+            f"{technology} model not implemented yet"
+        )
 
     if masterdata_loaded:
 
