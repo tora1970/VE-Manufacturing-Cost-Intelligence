@@ -1,10 +1,36 @@
 import streamlit as st
 
+from services.masterdata_repository import masterdata
+
+
+# =====================================================
+# PAGE CONFIG
+# =====================================================
+
 st.set_page_config(
     page_title="VE Manufacturing Cost Intelligence",
     page_icon="📊",
     layout="wide"
 )
+
+
+# =====================================================
+# MASTERDATA LOAD
+# =====================================================
+
+masterdata_loaded = False
+masterdata_error = None
+
+try:
+
+    masterdata.load_all()
+
+    masterdata_loaded = True
+
+except Exception as e:
+
+    masterdata_error = str(e)
+
 
 # =====================================================
 # HEADER
@@ -12,6 +38,7 @@ st.set_page_config(
 
 st.title("VE Manufacturing Cost Intelligence")
 st.caption("Digital Cost Intelligence Platform")
+
 
 # =====================================================
 # MAIN NAVIGATION
@@ -25,6 +52,7 @@ tab_technology, tab_masterdata, tab_system = st.tabs(
     ]
 )
 
+
 # =====================================================
 # TECHNOLOGIES
 # =====================================================
@@ -32,10 +60,6 @@ tab_technology, tab_masterdata, tab_system = st.tabs(
 with tab_technology:
 
     st.header("Technology Cost Models")
-
-    st.info(
-        "Technology-specific cost models will be launched from here."
-    )
 
     technology = st.selectbox(
         "Select Technology",
@@ -49,7 +73,22 @@ with tab_technology:
         ]
     )
 
-    st.write(f"Selected technology: {technology}")
+    st.info(
+        f"Selected technology: {technology}"
+    )
+
+    if masterdata_loaded:
+
+        st.success(
+            "Masterdata available"
+        )
+
+    else:
+
+        st.error(
+            "Masterdata unavailable"
+        )
+
 
 # =====================================================
 # MASTERDATA
@@ -59,9 +98,89 @@ with tab_masterdata:
 
     st.header("Masterdata")
 
-    st.info(
-        "Masterdata integration will be added in the next step."
-    )
+    if not masterdata_loaded:
+
+        st.error(
+            f"Masterdata load failed: {masterdata_error}"
+        )
+
+    else:
+
+        st.success(
+            "Masterdata loaded successfully"
+        )
+
+        st.subheader(
+            "Data Overview"
+        )
+
+        if hasattr(masterdata, "materials"):
+            st.write(
+                f"Materials: {len(masterdata.materials)}"
+            )
+
+        if hasattr(masterdata, "processes"):
+            st.write(
+                f"Processes: {len(masterdata.processes)}"
+            )
+
+        if hasattr(masterdata, "technologies"):
+            st.write(
+                f"Technologies: {len(masterdata.technologies)}"
+            )
+
+        if hasattr(masterdata, "regions"):
+            st.write(
+                f"Regions: {len(masterdata.regions)}"
+            )
+
+        st.markdown("---")
+
+        materials_tab, processes_tab, technologies_tab, regions_tab = st.tabs(
+            [
+                "Materials",
+                "Processes",
+                "Technologies",
+                "Regions"
+            ]
+        )
+
+        with materials_tab:
+
+            if hasattr(masterdata, "materials"):
+
+                st.dataframe(
+                    masterdata.materials,
+                    use_container_width=True
+                )
+
+        with processes_tab:
+
+            if hasattr(masterdata, "processes"):
+
+                st.dataframe(
+                    masterdata.processes,
+                    use_container_width=True
+                )
+
+        with technologies_tab:
+
+            if hasattr(masterdata, "technologies"):
+
+                st.dataframe(
+                    masterdata.technologies,
+                    use_container_width=True
+                )
+
+        with regions_tab:
+
+            if hasattr(masterdata, "regions"):
+
+                st.dataframe(
+                    masterdata.regions,
+                    use_container_width=True
+                )
+
 
 # =====================================================
 # SYSTEM
@@ -71,8 +190,34 @@ with tab_system:
 
     st.header("System")
 
-    st.success("Application running successfully")
+    if masterdata_loaded:
 
-    st.write("Repository: VE-Manufacturing-Cost-Intelligence")
+        st.success(
+            "Masterdata loaded successfully"
+        )
 
-    st.write("Status: OK")
+    else:
+
+        st.error(
+            f"Masterdata load failed: {masterdata_error}"
+        )
+
+    st.markdown("---")
+
+    if st.button("Reload Masterdata"):
+
+        try:
+
+            masterdata.load_all()
+
+            st.success(
+                "Masterdata reloaded successfully"
+            )
+
+            st.rerun()
+
+        except Exception as e:
+
+            st.error(
+                f"Reload failed: {e}"
+            )

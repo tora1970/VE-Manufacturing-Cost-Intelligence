@@ -4,7 +4,7 @@ import pandas as pd
 
 class MasterDataLoader:
 
-    def __init__(self, masterdata_path="masterdata"):
+    def __init__(self, masterdata_path="Masterdata"):
 
         self.masterdata_path = Path(masterdata_path)
 
