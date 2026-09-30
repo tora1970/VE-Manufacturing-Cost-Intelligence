@@ -6,7 +6,7 @@ application:
 
 github:
   owner: tora1970
-  repository: VEMCI-Masterdata
+  repository: VE-Manufacturing-Cost-Intelligence
   branch: main
   private_repository: false
   token_environment_variable: VEMCI_GITHUB_TOKEN
