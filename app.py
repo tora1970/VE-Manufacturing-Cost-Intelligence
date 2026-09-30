@@ -25,7 +25,7 @@ if "masterdata_loaded" not in st.session_state:
         st.session_state.masterdata_loaded = True
 
     except Exception as e:
-        st.error(f"❌ Failed to load masterdata: {e}")
+        st.error(f"Failed to load masterdata: {e}")
         st.stop()
 
 
@@ -42,10 +42,8 @@ with st.sidebar:
 
     st.subheader("System")
 
-    if st.button(
-        "🔄 Reload Masterdata",
-        use_container_width=True
-    ):
+    if st.button("🔄 Reload Masterdata"):
+
         try:
             masterdata.load_all()
             st.success("Masterdata reloaded successfully")
@@ -91,10 +89,7 @@ with st.sidebar:
 # =====================================================
 
 st.title("VE Manufacturing Cost Intelligence")
-
-st.caption(
-    "Digital Cost Intelligence Platform"
-)
+st.caption("Digital Cost Intelligence Platform")
 
 st.markdown("---")
 
@@ -113,7 +108,7 @@ tab_technology, tab_masterdata, tab_system = st.tabs(
 
 
 # =====================================================
-# TECHNOLOGIES TAB
+# TECHNOLOGY TAB
 # =====================================================
 
 with tab_technology:
@@ -127,21 +122,20 @@ with tab_technology:
 
         tech_column = None
 
-        for col in [
+        for candidate in [
             "Technology_Name",
             "Technology",
             "Name"
         \]:
-            if col in masterdata.technologies.columns:
-                tech_column = col
+
+            if candidate in masterdata.technologies.columns:
+                tech_column = candidate
                 break
 
         if tech_column:
 
             technologies = sorted(
-                masterdata.technologies[
-                    tech_column
-                ]
+                masterdata.technologies[tech_column]
                 .dropna()
                 .unique()
             )
@@ -151,29 +145,20 @@ with tab_technology:
                 technologies
             )
 
-            st.info(
+            st.success(
                 f"Selected Technology: {selected_technology}"
             )
-
-            # Future technology models
-            #
-            # HPDC
-            # Machining
-            # Injection Molding
-            # LPDC
-            # Gravity Die Casting
-            # Sheet Metal
 
         else:
 
             st.error(
-                "Technology column not found in Technologies.xlsx"
+                "No valid technology column found."
             )
 
     else:
 
         st.warning(
-            "Technologies masterdata not loaded."
+            "Technology masterdata not loaded."
         )
 
 
@@ -185,7 +170,7 @@ with tab_masterdata:
 
     st.header("Masterdata")
 
-    md_tabs = st.tabs(
+    materials_tab, processes_tab, technologies_tab, regions_tab = st.tabs(
         [
             "Materials",
             "Processes",
@@ -194,44 +179,55 @@ with tab_masterdata:
         ]
     )
 
-    with md_tabs[0\]:
+    with materials_tab:
 
         if masterdata.materials is not None:
+
             st.dataframe(
                 masterdata.materials,
                 use_container_width=True
             )
+
         else:
+
             st.warning("Materials not loaded")
 
-    with md_tabs[1\]:
+    with processes_tab:
 
         if masterdata.processes is not None:
+
             st.dataframe(
                 masterdata.processes,
                 use_container_width=True
             )
+
         else:
+
             st.warning("Processes not loaded")
 
-    with md_tabs[2\]:
+    with technologies_tab:
 
         if masterdata.technologies is not None:
+
             st.dataframe(
                 masterdata.technologies,
                 use_container_width=True
             )
+
         else:
             st.warning("Technologies not loaded")
 
-    with md_tabs[3\]:
+    with regions_tab:
 
         if masterdata.regions is not None:
+
             st.dataframe(
                 masterdata.regions,
                 use_container_width=True
             )
+
         else:
+
             st.warning("Regions not loaded")
 
 
@@ -243,29 +239,25 @@ with tab_system:
 
     st.header("System Information")
 
-    st.write("Masterdata loaded successfully.")
-
     st.write(
-        f"Materials: "
-        f"{len(masterdata.materials) if masterdata.materials is not None else 0}"
+        f"Materials loaded: {len(masterdata.materials) if masterdata.materials is not None else 0}"
     )
 
     st.write(
-        f"Processes: "
-        f"{len(masterdata.processes) if masterdata.processes is not None else 0}"
+        f"Processes loaded: {len(masterdata.processes) if masterdata.processes is not None else 0}"
     )
 
     st.write(
-        f"Technologies: "
-        f"{len(masterdata.technologies) if masterdata.technologies is not None else 0}"
+        f"Technologies loaded: {len(masterdata.technologies) if masterdata.technologies is not None else 0}"
     )
 
     st.write(
-        f"Regions: "
-        f"{len(masterdata.regions) if masterdata.regions is not None else 0}"
+        f"Regions loaded: {len(masterdata.regions) if masterdata.regions is not None else 0}"
     )
 
     st.markdown("---")
 
     st.code(
-        "Masterdata
+        "Masterdata source configured in settings.yaml",
+        language="text"
+    )
