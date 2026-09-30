@@ -5,6 +5,7 @@ import pandas as pd
 class MasterDataLoader:
 
     def __init__(self, masterdata_path="masterdata"):
+
         self.masterdata_path = Path(masterdata_path)
 
         self.materials = None
@@ -50,13 +51,4 @@ class MasterDataLoader:
             self.masterdata_path / "Technology_Cost_Library.xlsx"
         )
 
-    def get_material(self, material):
-
-        result = self.materials[
-            self.materials["Material"] == material
-        ]
-
-        if len(result) == 0:
-            return None
-
-        return result.iloc[0].to_dict()
+        return True
