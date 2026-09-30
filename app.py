@@ -3,9 +3,9 @@ import streamlit as st
 from services.masterdata_repository import masterdata
 
 
-# --------------------------------------------------
+# =====================================================
 # PAGE CONFIG
-# --------------------------------------------------
+# =====================================================
 
 st.set_page_config(
     page_title="VE Manufacturing Cost Intelligence",
@@ -14,39 +14,29 @@ st.set_page_config(
 )
 
 
-# --------------------------------------------------
-# INITIAL MASTERDATA LOAD
-# --------------------------------------------------
+# =====================================================
+# INITIALIZE MASTERDATA
+# =====================================================
 
 if "masterdata_loaded" not in st.session_state:
 
     try:
-
         masterdata.load_all()
-
         st.session_state.masterdata_loaded = True
 
     except Exception as e:
-
-        st.error(
-            f"❌ Failed to load masterdata: {e}"
-        )
-
+        st.error(f"❌ Failed to load masterdata: {e}")
         st.stop()
 
 
-# --------------------------------------------------
+# =====================================================
 # SIDEBAR
-# --------------------------------------------------
+# =====================================================
 
 with st.sidebar:
 
-    st.image(
-        "https://img.icons8.com/color/96/database.png",
-        width=50
-    )
-
     st.title("VEMCI")
+    st.caption("VE Manufacturing Cost Intelligence")
 
     st.markdown("---")
 
@@ -56,56 +46,49 @@ with st.sidebar:
         "🔄 Reload Masterdata",
         use_container_width=True
     ):
-
         try:
-
             masterdata.load_all()
-
-            st.success(
-                "Masterdata reloaded successfully"
-            )
+            st.success("Masterdata reloaded successfully")
 
         except Exception as e:
-
-            st.error(
-                f"Reload failed: {e}"
-            )
+            st.error(f"Reload failed: {e}")
 
     st.markdown("---")
 
     st.subheader("Masterdata Status")
 
-    try:
+    st.metric(
+        "Materials",
+        len(masterdata.materials)
+        if masterdata.materials is not None
+        else 0
+    )
 
-        st.metric(
-            "Materials",
-            len(masterdata.materials)
-        )
+    st.metric(
+        "Processes",
+        len(masterdata.processes)
+        if masterdata.processes is not None
+        else 0
+    )
 
-        st.metric(
-            "Processes",
-            len(masterdata.processes)
-        )
+    st.metric(
+        "Technologies",
+        len(masterdata.technologies)
+        if masterdata.technologies is not None
+        else 0
+    )
 
-        st.metric(
-            "Technologies",
-            len(masterdata.technologies)
-        )
-
-        st.metric(
-            "Regions",
-            len(masterdata.regions)
-        )
-
-    except:
-        st.warning(
-            "Masterdata not loaded"
-        )
+    st.metric(
+        "Regions",
+        len(masterdata.regions)
+        if masterdata.regions is not None
+        else 0
+    )
 
 
-# --------------------------------------------------
+# =====================================================
 # HEADER
-# --------------------------------------------------
+# =====================================================
 
 st.title("VE Manufacturing Cost Intelligence")
 
@@ -116,11 +99,11 @@ st.caption(
 st.markdown("---")
 
 
-# --------------------------------------------------
+# =====================================================
 # MAIN TABS
-# --------------------------------------------------
+# =====================================================
 
-tab1, tab2, tab3 = st.tabs(
+tab_technology, tab_masterdata, tab_system = st.tabs(
     [
         "Technologies",
         "Masterdata",
@@ -129,101 +112,160 @@ tab1, tab2, tab3 = st.tabs(
 )
 
 
-# --------------------------------------------------
-# TECHNOLOGIES
-# --------------------------------------------------
+# =====================================================
+# TECHNOLOGIES TAB
+# =====================================================
 
-with tab1:
+with tab_technology:
 
     st.header("Technology Cost Models")
 
-    technologies = sorted(
-        masterdata.technologies[
-            "Technology_Name"
-        ].unique()
-    )
+    if (
+        masterdata.technologies is not None
+        and not masterdata.technologies.empty
+    ):
 
-    selected_technology = st.selectbox(
-        "Select Technology",
-        technologies
-    )
+        tech_column = None
 
-    st.info(
-        f"Selected Technology: {selected_technology}"
-    )
+        for col in [
+            "Technology_Name",
+            "Technology",
+            "Name"
+        \]:
+            if col in masterdata.technologies.columns:
+                tech_column = col
+                break
 
-    # TODO
-    # HPDC
-    # Machining
-    # Injection Molding
-    # LPDC
-    # Sheet Metal
+        if tech_column:
+
+            technologies = sorted(
+                masterdata.technologies[
+                    tech_column
+                ]
+                .dropna()
+                .unique()
+            )
+
+            selected_technology = st.selectbox(
+                "Select Technology",
+                technologies
+            )
+
+            st.info(
+                f"Selected Technology: {selected_technology}"
+            )
+
+            # Future technology models
+            #
+            # HPDC
+            # Machining
+            # Injection Molding
+            # LPDC
+            # Gravity Die Casting
+            # Sheet Metal
+
+        else:
+
+            st.error(
+                "Technology column not found in Technologies.xlsx"
+            )
+
+    else:
+
+        st.warning(
+            "Technologies masterdata not loaded."
+        )
 
 
-# --------------------------------------------------
-# MASTERDATA
-# --------------------------------------------------
+# =====================================================
+# MASTERDATA TAB
+# =====================================================
 
-with tab2:
+with tab_masterdata:
 
     st.header("Masterdata")
 
-    md_tabs = st.tabs([
-        "Materials",
-        "Processes",
-        "Technologies",
-        "Regions"
-    ])
+    md_tabs = st.tabs(
+        [
+            "Materials",
+            "Processes",
+            "Technologies",
+            "Regions"
+        ]
+    )
 
     with md_tabs[0\]:
-        st.dataframe(
-            masterdata.materials,
-            use_container_width=True
-        )
+
+        if masterdata.materials is not None:
+            st.dataframe(
+                masterdata.materials,
+                use_container_width=True
+            )
+        else:
+            st.warning("Materials not loaded")
 
     with md_tabs[1\]:
-        st.dataframe(
-            masterdata.processes,
-            use_container_width=True
-        )
+
+        if masterdata.processes is not None:
+            st.dataframe(
+                masterdata.processes,
+                use_container_width=True
+            )
+        else:
+            st.warning("Processes not loaded")
 
     with md_tabs[2\]:
-        st.dataframe(
-            masterdata.technologies,
-            use_container_width=True
-        )
+
+        if masterdata.technologies is not None:
+            st.dataframe(
+                masterdata.technologies,
+                use_container_width=True
+            )
+        else:
+            st.warning("Technologies not loaded")
 
     with md_tabs[3\]:
-        st.dataframe(
-            masterdata.regions,
-            use_container_width=True
-        )
+
+        if masterdata.regions is not None:
+            st.dataframe(
+                masterdata.regions,
+                use_container_width=True
+            )
+        else:
+            st.warning("Regions not loaded")
 
 
-# --------------------------------------------------
-# SYSTEM
-# --------------------------------------------------
+# =====================================================
+# SYSTEM TAB
+# =====================================================
 
-with tab3:
+with tab_system:
 
     st.header("System Information")
 
+    st.write("Masterdata loaded successfully.")
+
     st.write(
-        "Masterdata loaded successfully."
+        f"Materials: "
+        f"{len(masterdata.materials) if masterdata.materials is not None else 0}"
     )
 
     st.write(
-        f"Materials: {len(masterdata.materials)}"
+        f"Processes: "
+        f"{len(masterdata.processes) if masterdata.processes is not None else 0}"
     )
 
     st.write(
-        f"Processes: {len(masterdata.processes)}"
+        f"Technologies: "
+        f"{len(masterdata.technologies) if masterdata.technologies is not None else 0}"
     )
 
     st.write(
-        f"Technologies: {len(masterdata.technologies)}"
+        f"Regions: "
+        f"{len(masterdata.regions) if masterdata.regions is not None else 0}"
     )
 
-    st.write(
-        f"Regions: {len(masterdata.regions)}"
-    )
+    st.markdown("---")
+
+    st.code(
+        "Masterdata
