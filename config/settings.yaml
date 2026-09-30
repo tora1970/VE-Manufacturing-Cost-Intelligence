@@ -25,7 +25,6 @@ masterdata:
   technology_rules: technologies/Technology_Rules.xlsx
   technology_cost_library: technologies/Technology_Cost_Library.xlsx
   hpdc_machines: hpdc/Machines.xlsx
-  hpdc_alloys: hpdc/Alloys.xlsx
   hpdc_parameters: hpdc/Parameters.xlsx
 
 hpdc_defaults:
