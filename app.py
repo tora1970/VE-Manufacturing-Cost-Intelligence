@@ -147,13 +147,17 @@ with tab_technology:
         if hasattr(masterdata, "regions"):
 
             try:
-                regions = (
-                    masterdata.regions.iloc[:, 0]
-                    .dropna()
-                    .astype(str)
-                    .tolist()
-                )
-            except:
+
+                if "Region Name" in masterdata.regions.columns:
+
+                    regions = (
+                        masterdata.regions["Region Name"]
+                        .dropna()
+                        .astype(str)
+                        .tolist()
+                    )
+
+            except Exception:
                 pass
 
         selected_region = st.selectbox(
@@ -168,8 +172,6 @@ with tab_technology:
             "Anodize",
             "Powder Coat",
             "Paint",
-            "E-Coat",
-            "Chrome",
             "Other"
         ]
     )
@@ -182,7 +184,7 @@ with tab_technology:
     st.write(f"Material: {selected_material}")
     st.write(f"Region: {selected_region}")
     st.write(f"Surface Treatment: {surface_treatment}")
-    
+
 # =====================================================
 # MASTERDATA
 # =====================================================
