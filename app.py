@@ -347,6 +347,72 @@ with tab_technology:
         "currency": currency,
     }
 
+    # =====================================================
+    # COST BREAKDOWN
+    # =====================================================
+
+    st.markdown("---")
+    st.subheader("Cost Breakdown")
+
+    cost_breakdown = {
+        "material_cost": 0.0,
+        "machine_cost": 0.0,
+        "labour_cost": 0.0,
+        "tooling_cost": 0.0,
+        "surface_treatment_cost": 0.0,
+        "packaging_cost": 0.0,
+        "logistics_cost": 0.0,
+    }
+
+    total_should_cost = sum(cost_breakdown.values())
+
+    cost_breakdown["total_should_cost"] = total_should_cost
+
+    st.session_state["cost_breakdown"] = cost_breakdown
+
+    breakdown_col1, breakdown_col2 = st.columns(2)
+
+    with breakdown_col1:
+
+        st.markdown("#### Manufacturing Costs")
+
+        st.write(
+            f"Material Cost: €{cost_breakdown['material_cost']:.2f}"
+        )
+
+        st.write(
+            f"Machine Cost: €{cost_breakdown['machine_cost']:.2f}"
+        )
+
+        st.write(
+            f"Labour Cost: €{cost_breakdown['labour_cost']:.2f}"
+        )
+
+        st.write(
+            f"Tooling Cost: €{cost_breakdown['tooling_cost']:.2f}"
+        )
+
+    with breakdown_col2:
+
+        st.markdown("#### Additional Costs")
+
+        st.write(
+            f"Surface Treatment Cost: €{cost_breakdown['surface_treatment_cost']:.2f}"
+        )
+
+        st.write(
+            f"Packaging Cost: €{cost_breakdown['packaging_cost']:.2f}"
+        )
+
+        st.write(
+            f"Logistics Cost: €{cost_breakdown['logistics_cost']:.2f}"
+        )
+
+    st.metric(
+        "Total Should Cost",
+        f"€{total_should_cost:.2f}"
+    )
+
 # =====================================================
 # MASTERDATA
 # =====================================================
