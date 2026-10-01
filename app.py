@@ -62,16 +62,15 @@ with tab_technology:
     st.header("Technology Cost Models")
 
     technology = st.selectbox(
-        "Select Technology",
-        [
-            "HPDC",
-            "Machining",
-            "Injection Molding",
-            "LPDC",
-            "Gravity Die Casting",
-            "Sheet Metal"
-        ]
-    )
+    "Select Technology",
+    [
+        "HPDC",
+        "CNC Machining",
+        "Injection Molding",
+        "Sand Casting",
+        "HP Multi Jet Fusion"
+    ]
+)
 
     st.info(
         f"Selected technology: {technology}"
@@ -89,7 +88,101 @@ with tab_technology:
             "Masterdata unavailable"
         )
 
+    st.markdown("---")
+    st.subheader("Manufacturing Input")
 
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        part_weight = st.number_input(
+            "Part Weight [kg]",
+            min_value=0.0,
+            value=0.10,
+            step=0.01
+        )
+
+    with col2:
+        annual_volume = st.number_input(
+            "Annual Volume [pcs/year]",
+            min_value=1,
+            value=10000,
+            step=100
+        )
+
+    with col3:
+        current_price = st.number_input(
+            "Current Price [EUR]",
+            min_value=0.0,
+            value=0.00,
+            step=0.10
+        )
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+
+        materials = []
+
+        if hasattr(masterdata, "materials"):
+
+            try:
+                materials = (
+                    masterdata.materials.iloc[:, 0]
+                    .dropna()
+                    .astype(str)
+                    .tolist()
+                )
+            except:
+                pass
+
+        selected_material = st.selectbox(
+            "Material",
+            materials if materials else ["No Materials Loaded"]
+        )
+
+    with col2:
+
+        regions = []
+
+        if hasattr(masterdata, "regions"):
+
+            try:
+                regions = (
+                    masterdata.regions.iloc[:, 0]
+                    .dropna()
+                    .astype(str)
+                    .tolist()
+                )
+            except:
+                pass
+
+        selected_region = st.selectbox(
+            "Manufacturing Region",
+            regions if regions else ["No Regions Loaded"]
+        )
+
+    surface_treatment = st.selectbox(
+        "Surface Treatment",
+        [
+            "None",
+            "Anodize",
+            "Powder Coat",
+            "Paint",
+            "E-Coat",
+            "Chrome",
+            "Other"
+        ]
+    )
+
+    st.markdown("### Selected Input Values")
+
+    st.write(f"Weight: {part_weight:.3f} kg")
+    st.write(f"Volume: {annual_volume:,} pcs/year")
+    st.write(f"Current Price: €{current_price:.2f}")
+    st.write(f"Material: {selected_material}")
+    st.write(f"Region: {selected_region}")
+    st.write(f"Surface Treatment: {surface_treatment}")
+    
 # =====================================================
 # MASTERDATA
 # =====================================================
