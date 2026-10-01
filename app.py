@@ -117,6 +117,13 @@ with tab_technology:
             step=0.10
         )
 
+    cycle_time_sec = st.number_input(
+        "Cycle Time [sec]",
+        min_value=1,
+        value=45,
+        step=1
+    )
+
     col1, col2 = st.columns(2)
 
     with col1:
@@ -385,6 +392,30 @@ with tab_technology:
         calculated_material_cost = 0.0
 
     cost_breakdown["material_cost"] = calculated_material_cost
+
+        # -----------------------------------------
+    # Labour Cost Calculation
+    # -----------------------------------------
+
+    try:
+
+        if labour_rate not in [None, "N/A", ""]:
+
+            calculated_labour_cost = (
+                float(cycle_time_sec)
+                / 3600
+            ) * float(labour_rate)
+
+        else:
+
+            calculated_labour_cost = 0.0
+
+    except Exception:
+
+        calculated_labour_cost = 0.0
+
+    cost_breakdown["labour_cost"] = calculated_labour_cost
+    
     total_should_cost = sum(cost_breakdown.values())
 
     cost_breakdown["total_should_cost"] = total_should_cost
