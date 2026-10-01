@@ -185,6 +185,142 @@ with tab_technology:
     st.write(f"Region: {selected_region}")
     st.write(f"Surface Treatment: {surface_treatment}")
 
+    # =====================================================
+    # PART CONTEXT
+    # =====================================================
+
+    st.markdown("---")
+    st.subheader("Resolved Cost Inputs")
+
+    material_name = "N/A"
+    material_group = "N/A"
+    density = "N/A"
+    material_cost = "N/A"
+
+    labour_rate = "N/A"
+    overhead_factor = "N/A"
+    currency = "N/A"
+
+    # -----------------------------------------
+    # Material Context
+    # -----------------------------------------
+
+    if (
+        hasattr(masterdata, "materials")
+        and selected_material != "No Materials Loaded"
+    ):
+
+        try:
+
+            material_row = masterdata.materials[
+                masterdata.materials["Material_Name"].astype(str)
+                == str(selected_material)
+            ]
+
+            if not material_row.empty:
+
+                material_row = material_row.iloc[0]
+
+                material_name = material_row.get(
+                    "Material_Name",
+                    "N/A"
+                )
+
+                material_group = material_row.get(
+                    "Material_Group",
+                    "N/A"
+                )
+
+                density = material_row.get(
+                    "Density",
+                    "N/A"
+                )
+
+                material_cost = material_row.get(
+                    "Default_Price_EUR_kg",
+                    "N/A"
+                )
+
+        except Exception:
+            pass
+
+    # -----------------------------------------
+    # Region Context
+    # -----------------------------------------
+
+    if (
+        hasattr(masterdata, "regions")
+        and selected_region != "No Regions Loaded"
+    ):
+
+        try:
+
+            region_row = masterdata.regions[
+                masterdata.regions["Region Name"].astype(str)
+                == str(selected_region)
+            ]
+
+            if not region_row.empty:
+
+                region_row = region_row.iloc[0]
+
+                labour_rate = region_row.get(
+                    "Labour Rate EUR hr",
+                    "N/A"
+                )
+
+                overhead_factor = region_row.get(
+                    "Overhead factor",
+                    "N/A"
+                )
+
+                currency = region_row.get(
+                    "Currency",
+                    "N/A"
+                )
+
+        except Exception:
+            pass
+
+    # -----------------------------------------
+    # Display Context
+    # -----------------------------------------
+
+    ctx_col1, ctx_col2 = st.columns(2)
+
+    with ctx_col1:
+
+        st.markdown("#### Material Context")
+
+        st.write(f"Material Name: {material_name}")
+        st.write(f"Material Group: {material_group}")
+        st.write(f"Density: {density}")
+        st.write(f"Default Material Cost: {material_cost} EUR/kg")
+
+    with ctx_col2:
+
+        st.markdown("#### Region Context")
+
+        st.write(f"Region: {selected_region}")
+        st.write(f"Labour Rate: {labour_rate}")
+        st.write(f"Overhead Factor: {overhead_factor}")
+        st.write(f"Currency: {currency}")
+
+    # -----------------------------------------
+    # Session State
+    # -----------------------------------------
+
+    st.session_state["part_context"] = {
+        "material_name": material_name,
+        "material_group": material_group,
+        "density": density,
+        "material_cost": material_cost,
+        "region_name": selected_region,
+        "labour_rate": labour_rate,
+        "overhead_factor": overhead_factor,
+        "currency": currency,
+    }
+
 # =====================================================
 # MASTERDATA
 # =====================================================
