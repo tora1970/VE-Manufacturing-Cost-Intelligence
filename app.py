@@ -213,7 +213,7 @@ with tab_technology:
         try:
 
             material_row = masterdata.materials[
-                masterdata.materials["Material_Name"].astype(str)
+                masterdata.materials["Material_ID"].astype(str)
                 == str(selected_material)
             ]
 
@@ -294,16 +294,42 @@ with tab_technology:
 
         st.write(f"Material Name: {material_name}")
         st.write(f"Material Group: {material_group}")
-        st.write(f"Density: {density}")
-        st.write(f"Default Material Cost: {material_cost} EUR/kg")
+        
+        if density not in [None, "N/A"]:
+            st.write(
+                f"Density: {float(density):,.0f} kg/m³"
+            )
+        else:
+            st.write("Density: N/A")
+
+    if material_cost not in [None, "N/A"]:
+        st.write(
+            f"Default Material Cost: €{float(material_cost):.2f}/kg"
+        )
+    else:
+        st.write(
+            "Default Material Cost: N/A")
 
     with ctx_col2:
 
         st.markdown("#### Region Context")
 
         st.write(f"Region: {selected_region}")
-        st.write(f"Labour Rate: {labour_rate}")
-        st.write(f"Overhead Factor: {overhead_factor}")
+
+        if labour_rate not in [None, "N/A"]:
+            st.write(
+                f"Labour Rate: {float(labour_rate):.2f} {currency}/hr"
+            )
+        else:
+            st.write("Labour Rate: N/A")
+
+        if overhead_factor not in [None, "N/A"]:
+            st.write(
+                f"Overhead Factor: {float(overhead_factor):.4f}"
+            )
+        else:
+            st.write("Overhead Factor: N/A")
+
         st.write(f"Currency: {currency}")
 
     # -----------------------------------------
