@@ -363,7 +363,28 @@ with tab_technology:
         "packaging_cost": 0.0,
         "logistics_cost": 0.0,
     }
+    # -----------------------------------------
+    # Material Cost Calculation
+    # -----------------------------------------
 
+    try:
+
+        if material_cost not in [None, "N/A", ""]:
+
+            calculated_material_cost = (
+                float(part_weight)
+                * float(material_cost)
+            )
+
+        else:
+
+            calculated_material_cost = 0.0
+
+    except Exception:
+
+        calculated_material_cost = 0.0
+
+    cost_breakdown["material_cost"] = calculated_material_cost
     total_should_cost = sum(cost_breakdown.values())
 
     cost_breakdown["total_should_cost"] = total_should_cost
