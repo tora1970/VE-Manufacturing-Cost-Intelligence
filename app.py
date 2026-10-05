@@ -464,7 +464,41 @@ with tab_technology:
         "Total Should Cost",
         f"€{total_should_cost:.2f}"
     )
+try:
+    current_price_value = float(current_price)
+    savings_eur = current_price_value - total_should_cost
 
+    if current_price_value > 0:
+        savings_pct = (
+            savings_eur /
+            current_price_value
+        ) * 100
+    else:
+        savings_pct = 0.0
+
+except Exception:
+    savings_eur = 0.0
+    savings_pct = 0.0
+
+st.markdown("---")
+
+st.subheader(
+    "Cost Intelligence Summary"
+)
+
+col1, col2 = st.columns(2)
+
+with col1:
+    st.metric(
+        "Savings [EUR]",
+        f"€{savings_eur:.2f}"
+    )
+
+with col2:
+    st.metric(
+        "Savings [%]",
+        f"{savings_pct:.1f}%"
+    )
 # =====================================================
 # MASTERDATA
 # =====================================================
