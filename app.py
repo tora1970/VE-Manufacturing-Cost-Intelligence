@@ -1,6 +1,10 @@
 import streamlit as st
 
 from services.masterdata_repository import masterdata
+from services.machine_rate_resolution import (
+    resolve_machine_rate,
+    technology_name_mapping,
+)
 
 
 # =====================================================
@@ -319,6 +323,12 @@ with tab_technology:
         except Exception:
             pass
 
+    machine_rate_eur_hr, machine_rate_resolution_status = resolve_machine_rate(
+        technology,
+        technology_name_mapping,
+        getattr(masterdata, "technology_cost_library", None),
+    )
+
     # -----------------------------------------
     # Display Context
     # -----------------------------------------
@@ -373,6 +383,19 @@ with tab_technology:
 
             st.write(f"Currency: {currency}")
 
+            if (
+                machine_rate_resolution_status == "resolved"
+                and machine_rate_eur_hr is not None
+            ):
+                st.write(f"Machine Rate: €{machine_rate_eur_hr:.2f}/hr")
+            else:
+                st.write("Machine Rate: Unavailable")
+
+        if machine_rate_resolution_status == "unavailable":
+            st.warning(
+                f"No verified standard machine rate exists for {technology}."
+            )
+
     # -----------------------------------------
     # Session State
     # -----------------------------------------
@@ -386,6 +409,8 @@ with tab_technology:
         "labour_rate": labour_rate,
         "overhead_factor": overhead_factor,
         "currency": currency,
+        "machine_rate_eur_hr": machine_rate_eur_hr,
+        "machine_rate_resolution_status": machine_rate_resolution_status,
     }
 
     # =====================================================
