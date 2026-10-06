@@ -361,6 +361,8 @@ with tab_technology:
         except Exception:
             pass
 
+    calculation_currency = "EUR"
+
     machine_rate_eur_hr, machine_rate_resolution_status = resolve_machine_rate(
         technology,
         technology_name_mapping,
@@ -407,7 +409,7 @@ with tab_technology:
 
             if labour_rate not in [None, "N/A"]:
                 st.write(
-                    f"Labour Rate: {float(labour_rate):,.2f} {currency}/hr"
+                    f"Labour Rate: €{float(labour_rate):,.2f}/hr"
                 )
             else:
                 st.write("Labour Rate: N/A")
@@ -419,7 +421,8 @@ with tab_technology:
             else:
                 st.write("Overhead Factor: N/A")
 
-            st.write(f"Currency: {currency}")
+            st.write(f"Calculation Currency: {calculation_currency}")
+            st.write(f"Local Region Currency: {currency}")
 
             st.write("Tooling Payment: Upfront CAPEX")
             if tooling_capex_eur > 0:
@@ -474,6 +477,8 @@ with tab_technology:
         "labour_rate": labour_rate,
         "overhead_factor": overhead_factor,
         "currency": currency,
+        "calculation_currency": calculation_currency,
+        "local_region_currency": currency,
         "machine_rate_eur_hr": machine_rate_eur_hr,
         "machine_rate_resolution_status": machine_rate_resolution_status,
         "tooling_capex_eur": tooling_capex_eur,
@@ -653,9 +658,7 @@ with tab_technology:
         savings_pct = None
 
     currency_status = (
-        "verified_eur"
-        if isinstance(currency, str) and currency.strip().upper() == "EUR"
-        else "unavailable"
+        "verified_eur" if calculation_currency == "EUR" else "unavailable"
     )
     modelled_business_case = calculate_modelled_tooling_business_case(
         savings_eur,
