@@ -8,6 +8,9 @@ from services.machine_rate_resolution import (
 from services.machine_cost_calculation import calculate_machine_cost
 from services.tooling_capex_status import classify_tooling_capex_status
 from services.tooling_cost_calculation import calculate_analytical_tooling_cost
+from services.tooling_business_case_calculation import (
+    calculate_modelled_tooling_business_case,
+)
 
 
 # =====================================================
@@ -152,7 +155,7 @@ with tab_technology:
 
         with col2:
             annual_volume = st.number_input(
-                "Annual Volume [pcs/year]",
+                "Annual Modelled Volume [pcs/year]",
                 min_value=1,
                 value=10000,
                 step=100
@@ -160,7 +163,7 @@ with tab_technology:
 
         with col3:
             current_price = st.number_input(
-                "Current Price [EUR]",
+                "Current Recurring Price [EUR/part]",
                 min_value=0.0,
                 value=0.00,
                 step=0.10
@@ -649,6 +652,44 @@ with tab_technology:
         savings_eur = None
         savings_pct = None
 
+    currency_status = (
+        "verified_eur"
+        if isinstance(currency, str) and currency.strip().upper() == "EUR"
+        else "unavailable"
+    )
+    modelled_business_case = calculate_modelled_tooling_business_case(
+        savings_eur,
+        annual_volume,
+        tooling_capex_eur,
+        currency_status,
+    )
+    st.session_state["part_context"].update(
+        {
+            "recurring_savings_per_part_eur": savings_eur,
+            "recurring_savings_per_part_status": (
+                "calculated" if savings_eur is not None else "unavailable"
+            ),
+            "annual_modelled_volume_pcs": annual_volume,
+            "annual_modelled_recurring_savings_eur": (
+                modelled_business_case.annual_modelled_recurring_savings_eur
+            ),
+            "annual_modelled_recurring_savings_status": (
+                modelled_business_case.annual_modelled_recurring_savings_status
+            ),
+            "simple_payback_volume_pcs": (
+                modelled_business_case.simple_payback_volume_pcs
+            ),
+            "simple_payback_volume_status": (
+                modelled_business_case.simple_payback_volume_status
+            ),
+            "simple_payback_years": modelled_business_case.simple_payback_years,
+            "simple_payback_years_status": (
+                modelled_business_case.simple_payback_years_status
+            ),
+            "business_case_currency_status": currency_status,
+        }
+    )
+
     st.metric(
         "Analytical Fully Loaded Cost per Part",
         (
@@ -677,6 +718,51 @@ with tab_technology:
             "Savings [%]",
             f"{savings_pct:.1f}%" if savings_pct is not None else "Unavailable"
         )
+
+    st.markdown("---")
+    st.subheader("Modelled Business Case")
+    st.metric(
+        "Recurring Savings per Part (Modelled)",
+        f"€{savings_eur:.2f}" if savings_eur is not None else "Unavailable",
+    )
+    st.metric(
+        "Annual Modelled Recurring Savings",
+        (
+            f"€{modelled_business_case.annual_modelled_recurring_savings_eur:.2f}"
+            if modelled_business_case.annual_modelled_recurring_savings_eur
+            is not None
+            else "Unavailable"
+        ),
+    )
+    st.metric("Upfront Tooling CAPEX", f"€{tooling_capex_eur:.2f}")
+    st.metric(
+        "Simple Payback Volume (Modelled)",
+        (
+            f"{modelled_business_case.simple_payback_volume_pcs:,.2f} pcs"
+            if modelled_business_case.simple_payback_volume_pcs is not None
+            else modelled_business_case.simple_payback_volume_status.replace(
+                "_", " "
+            ).title()
+        ),
+    )
+    st.metric(
+        "Simple Payback Years (Modelled)",
+        (
+            f"{modelled_business_case.simple_payback_years:.2f}"
+            if modelled_business_case.simple_payback_years is not None
+            else modelled_business_case.simple_payback_years_status.replace(
+                "_", " "
+            ).title()
+        ),
+    )
+    st.caption(
+        "Modelled outputs use the entered annual run-rate and do not represent "
+        "realized fiscal-year savings."
+    )
+    st.caption(
+        "Simple payback is an undiscounted screening metric and is not ROI, IRR "
+        "or NPV."
+    )
 # =====================================================
 # MASTERDATA
 # =====================================================
