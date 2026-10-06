@@ -1,0 +1,266 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vemci.example/schemas/surface_treatment_contract.schema.json",
+  "title": "VEMCI Surface Treatment Contract",
+  "type": "object",
+  "required": [
+    "input",
+    "context",
+    "rates"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "input": {
+      "$ref": "#/$defs/input"
+    },
+    "context": {
+      "$ref": "#/$defs/context"
+    },
+    "rates": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/rate"
+      }
+    },
+    "result": {
+      "$ref": "#/$defs/result"
+    }
+  },
+  "$defs": {
+    "input": {
+      "type": "object",
+      "required": [
+        "surface_treatment",
+        "surface_area_m2",
+        "surface_treatment_addon_eur_per_part"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "surface_treatment": {
+          "enum": [
+            "None",
+            "Anodizing",
+            "Powder Coating",
+            "Wet Painting",
+            "PVD",
+            "Other"
+          ]
+        },
+        "surface_area_m2": {
+          "type": "number",
+          "minimum": 0
+        },
+        "surface_treatment_addon_eur_per_part": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "surface_treatment": {
+                "const": "None"
+              }
+            },
+            "required": [
+              "surface_treatment"
+            ]
+          },
+          "then": {
+            "properties": {
+              "surface_area_m2": {
+                "const": 0
+              },
+              "surface_treatment_addon_eur_per_part": {
+                "const": 0
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "surface_area_m2": {
+                "exclusiveMinimum": 0
+              }
+            }
+          }
+        }
+      ]
+    },
+    "context": {
+      "type": "object",
+      "required": [
+        "selected_region",
+        "calculation_currency"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "selected_region": {
+          "type": "string",
+          "minLength": 1
+        },
+        "calculation_currency": {
+          "const": "EUR"
+        }
+      }
+    },
+    "rate": {
+      "type": "object",
+      "required": [
+        "treatment",
+        "region",
+        "rate_eur_m2",
+        "status",
+        "source"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "treatment": {
+          "enum": [
+            "Anodizing",
+            "Powder Coating",
+            "Wet Painting",
+            "PVD",
+            "Other"
+          ]
+        },
+        "region": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rate_eur_m2": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "status": {
+          "enum": [
+            "Active",
+            "Inactive"
+          ]
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "result": {
+      "type": "object",
+      "required": [
+        "surface_treatment_cost_eur_per_part",
+        "surface_treatment_cost_status",
+        "surface_treatment_rate_eur_m2",
+        "surface_treatment_rate_source"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "surface_treatment_cost_eur_per_part": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "surface_treatment_cost_status": {
+          "enum": [
+            "not_required",
+            "calculated",
+            "incomplete",
+            "rate_unavailable"
+          ]
+        },
+        "surface_treatment_rate_eur_m2": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "exclusiveMinimum": 0
+        },
+        "surface_treatment_rate_source": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "surface_treatment_cost_status": {
+                "const": "not_required"
+              }
+            },
+            "required": [
+              "surface_treatment_cost_status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "surface_treatment_cost_eur_per_part": {
+                "const": 0
+              },
+              "surface_treatment_rate_eur_m2": {
+                "type": "null"
+              },
+              "surface_treatment_rate_source": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "surface_treatment_cost_status": {
+                "const": "calculated"
+              }
+            },
+            "required": [
+              "surface_treatment_cost_status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "surface_treatment_cost_eur_per_part": {
+                "type": "number",
+                "minimum": 0
+              },
+              "surface_treatment_rate_eur_m2": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "surface_treatment_rate_source": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "surface_treatment_cost_status": {
+                "enum": [
+                  "incomplete",
+                  "rate_unavailable"
+                ]
+              }
+            },
+            "required": [
+              "surface_treatment_cost_status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "surface_treatment_cost_eur_per_part": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
