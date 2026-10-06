@@ -5,6 +5,7 @@ from services.machine_rate_resolution import (
     resolve_machine_rate,
     technology_name_mapping,
 )
+from services.machine_cost_calculation import calculate_machine_cost
 
 
 # =====================================================
@@ -422,7 +423,7 @@ with tab_technology:
 
     cost_breakdown = {
         "material_cost": 0.0,
-        "machine_cost": 0.0,
+        "machine_cost": None,
         "labour_cost": 0.0,
         "tooling_cost": 0.0,
         "surface_treatment_cost": 0.0,
@@ -474,10 +475,29 @@ with tab_technology:
         calculated_labour_cost = 0.0
 
     cost_breakdown["labour_cost"] = calculated_labour_cost
-    
-    total_should_cost = sum(cost_breakdown.values())
+
+    calculated_machine_cost, machine_cost_status = calculate_machine_cost(
+        cycle_time_sec,
+        machine_rate_eur_hr,
+    )
+
+    if machine_cost_status == "calculated":
+        cost_breakdown["machine_cost"] = calculated_machine_cost
+        should_cost_status = "complete"
+        total_should_cost = sum(cost_breakdown.values())
+    else:
+        cost_breakdown["machine_cost"] = None
+        should_cost_status = "incomplete"
+        total_should_cost = None
 
     cost_breakdown["total_should_cost"] = total_should_cost
+    st.session_state["part_context"].update(
+        {
+            "machine_cost": calculated_machine_cost,
+            "machine_cost_status": machine_cost_status,
+            "should_cost_status": should_cost_status,
+        }
+    )
 
     st.session_state["cost_breakdown"] = cost_breakdown
 
@@ -491,9 +511,12 @@ with tab_technology:
             f"Material Cost: €{cost_breakdown['material_cost']:.2f}"
         )
 
-        st.write(
-            f"Machine Cost: €{cost_breakdown['machine_cost']:.2f}"
-        )
+        if machine_cost_status == "calculated":
+            st.write(
+                f"Machine Cost: €{cost_breakdown['machine_cost']:.2f}"
+            )
+        else:
+            st.write("Machine Cost: Unavailable")
 
         st.write(
             f"Labour Cost: €{cost_breakdown['labour_cost']:.2f}"
@@ -519,25 +542,33 @@ with tab_technology:
             f"Logistics Cost: €{cost_breakdown['logistics_cost']:.2f}"
         )
 
-    st.metric(
-        "Total Should Cost",
-        f"€{total_should_cost:.2f}"
-    )
-    try:
-        current_price_value = float(current_price)
-        savings_eur = current_price_value - total_should_cost
+    if should_cost_status == "complete":
+        st.metric(
+            "Total Should Cost",
+            f"€{total_should_cost:.2f}"
+        )
+        try:
+            current_price_value = float(current_price)
+            savings_eur = current_price_value - total_should_cost
 
-        if current_price_value > 0:
-            savings_pct = (
-                savings_eur /
-                current_price_value
-            ) * 100
-        else:
+            if current_price_value > 0:
+                savings_pct = (
+                    savings_eur /
+                    current_price_value
+                ) * 100
+            else:
+                savings_pct = 0.0
+
+        except Exception:
+            savings_eur = 0.0
             savings_pct = 0.0
-
-    except Exception:
-        savings_eur = 0.0
-        savings_pct = 0.0
+    else:
+        st.metric("Total Should Cost", "Incomplete")
+        st.warning(
+            "Total Should Cost is incomplete because Machine Cost is unavailable."
+        )
+        savings_eur = None
+        savings_pct = None
 
     st.markdown("---")
 
@@ -550,13 +581,13 @@ with tab_technology:
     with col1:
         st.metric(
             "Savings [EUR]",
-            f"€{savings_eur:.2f}"
+            f"€{savings_eur:.2f}" if savings_eur is not None else "Unavailable"
         )
 
     with col2:
         st.metric(
             "Savings [%]",
-            f"{savings_pct:.1f}%"
+            f"{savings_pct:.1f}%" if savings_pct is not None else "Unavailable"
         )
 # =====================================================
 # MASTERDATA
