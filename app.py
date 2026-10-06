@@ -6,6 +6,7 @@ from services.machine_rate_resolution import (
     technology_name_mapping,
 )
 from services.machine_cost_calculation import calculate_machine_cost
+from services.tooling_capex_status import classify_tooling_capex_status
 
 
 # =====================================================
@@ -169,6 +170,27 @@ with tab_technology:
             min_value=1,
             value=45,
             step=1
+        )
+
+        st.markdown("#### Tooling Investment")
+        tooling_capex_eur = st.number_input(
+            "Tooling CAPEX [EUR]",
+            min_value=0.0,
+            value=0.0,
+            step=1000.0,
+            key="tooling_capex_eur_input",
+        )
+        tooling_amortization_volume_pcs = st.number_input(
+            "Tooling Amortization Volume [pcs]",
+            min_value=0,
+            value=0,
+            step=1000,
+            key="tooling_amortization_volume_pcs_input",
+        )
+        tooling_payment_treatment = "upfront_capex"
+        tooling_resolution_status = classify_tooling_capex_status(
+            tooling_capex_eur,
+            tooling_amortization_volume_pcs,
         )
 
         col1, col2 = st.columns(2)
@@ -384,6 +406,19 @@ with tab_technology:
 
             st.write(f"Currency: {currency}")
 
+            st.write("Tooling Payment: Upfront CAPEX")
+            if tooling_capex_eur > 0:
+                st.write(f"Tooling CAPEX: €{tooling_capex_eur:.2f}")
+            else:
+                st.write("Tooling CAPEX: Not provided")
+
+            if tooling_amortization_volume_pcs > 0:
+                st.write(
+                    f"Amortization Volume: {tooling_amortization_volume_pcs:,} pcs"
+                )
+            else:
+                st.write("Amortization Volume: Not provided")
+
             if (
                 machine_rate_resolution_status == "resolved"
                 and machine_rate_eur_hr is not None
@@ -391,6 +426,11 @@ with tab_technology:
                 st.write(f"Machine Rate: €{machine_rate_eur_hr:.2f}/hr")
             else:
                 st.write("Machine Rate: Unavailable")
+
+        if tooling_resolution_status == "incomplete":
+            st.warning(
+                "Both CAPEX and amortization volume are required for future analytical tooling allocation."
+            )
 
         if machine_rate_resolution_status == "unavailable":
             st.warning(
@@ -412,6 +452,10 @@ with tab_technology:
         "currency": currency,
         "machine_rate_eur_hr": machine_rate_eur_hr,
         "machine_rate_resolution_status": machine_rate_resolution_status,
+        "tooling_capex_eur": tooling_capex_eur,
+        "tooling_amortization_volume_pcs": tooling_amortization_volume_pcs,
+        "tooling_payment_treatment": tooling_payment_treatment,
+        "tooling_resolution_status": tooling_resolution_status,
     }
 
     # =====================================================
@@ -522,9 +566,9 @@ with tab_technology:
             f"Labour Cost: €{cost_breakdown['labour_cost']:.2f}"
         )
 
-        st.write(
-            f"Tooling Cost: €{cost_breakdown['tooling_cost']:.2f}"
-        )
+        st.write("Tooling CAPEX: Shown separately")
+        if tooling_capex_eur > 0:
+            st.write(f"Upfront Tooling CAPEX: €{tooling_capex_eur:.2f}")
 
     with breakdown_col2:
 
