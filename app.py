@@ -7,6 +7,7 @@ from services.machine_rate_resolution import (
 )
 from services.machine_cost_calculation import calculate_machine_cost
 from services.tooling_capex_status import classify_tooling_capex_status
+from services.tooling_cost_calculation import calculate_analytical_tooling_cost
 
 
 # =====================================================
@@ -192,6 +193,17 @@ with tab_technology:
             tooling_capex_eur,
             tooling_amortization_volume_pcs,
         )
+
+        if tooling_resolution_status == "ready_for_analysis":
+            analytical_tooling_cost_per_part_eur, analytical_tooling_cost_status = (
+                calculate_analytical_tooling_cost(
+                    tooling_capex_eur,
+                    tooling_amortization_volume_pcs,
+                )
+            )
+        else:
+            analytical_tooling_cost_per_part_eur = None
+            analytical_tooling_cost_status = "unavailable"
 
         col1, col2 = st.columns(2)
 
@@ -419,6 +431,15 @@ with tab_technology:
             else:
                 st.write("Amortization Volume: Not provided")
 
+            if tooling_resolution_status == "ready_for_analysis":
+                if analytical_tooling_cost_status == "calculated":
+                    st.write(
+                        "Analytical Tooling Cost per Part: "
+                        f"€{analytical_tooling_cost_per_part_eur:.2f}/part"
+                    )
+                else:
+                    st.write("Analytical Tooling Cost per Part: Unavailable")
+
             if (
                 machine_rate_resolution_status == "resolved"
                 and machine_rate_eur_hr is not None
@@ -456,6 +477,8 @@ with tab_technology:
         "tooling_amortization_volume_pcs": tooling_amortization_volume_pcs,
         "tooling_payment_treatment": tooling_payment_treatment,
         "tooling_resolution_status": tooling_resolution_status,
+        "analytical_tooling_cost_per_part_eur": analytical_tooling_cost_per_part_eur,
+        "analytical_tooling_cost_status": analytical_tooling_cost_status,
     }
 
     # =====================================================
@@ -535,11 +558,23 @@ with tab_technology:
         total_should_cost = None
 
     cost_breakdown["total_should_cost"] = total_should_cost
+    analytical_fully_loaded_cost_per_part_eur = None
+    if (
+        should_cost_status == "complete"
+        and analytical_tooling_cost_status == "calculated"
+    ):
+        analytical_fully_loaded_cost_per_part_eur = (
+            total_should_cost + analytical_tooling_cost_per_part_eur
+        )
+
     st.session_state["part_context"].update(
         {
             "machine_cost": calculated_machine_cost,
             "machine_cost_status": machine_cost_status,
             "should_cost_status": should_cost_status,
+            "analytical_fully_loaded_cost_per_part_eur": (
+                analytical_fully_loaded_cost_per_part_eur
+            ),
         }
     )
 
@@ -613,6 +648,15 @@ with tab_technology:
         )
         savings_eur = None
         savings_pct = None
+
+    st.metric(
+        "Analytical Fully Loaded Cost per Part",
+        (
+            f"€{analytical_fully_loaded_cost_per_part_eur:.2f}"
+            if analytical_fully_loaded_cost_per_part_eur is not None
+            else "Unavailable"
+        ),
+    )
 
     st.markdown("---")
 
