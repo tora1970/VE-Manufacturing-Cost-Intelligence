@@ -155,7 +155,7 @@ with tab_technology:
 
         with col2:
             annual_volume = st.number_input(
-                "Annual Modelled Volume [pcs/year]",
+                "Annual Volume [pcs/year]",
                 min_value=1,
                 value=10000,
                 step=100
