@@ -163,7 +163,7 @@ with tab_technology:
 
         with col3:
             current_price = st.number_input(
-                "Current Recurring Price [EUR/part]",
+                "Current Price [EUR/part]",
                 min_value=0.0,
                 value=0.00,
                 step=0.10
@@ -393,7 +393,7 @@ with tab_technology:
 
             if material_cost not in [None, "N/A"]:
                 st.write(
-                    f"Default Material Cost: €{float(material_cost):.2f}/kg"
+                    f"Default Material Cost: €{float(material_cost):,.2f}/kg"
                 )
             else:
                 st.write(
@@ -407,14 +407,14 @@ with tab_technology:
 
             if labour_rate not in [None, "N/A"]:
                 st.write(
-                    f"Labour Rate: {float(labour_rate):.2f} {currency}/hr"
+                    f"Labour Rate: {float(labour_rate):,.2f} {currency}/hr"
                 )
             else:
                 st.write("Labour Rate: N/A")
 
             if overhead_factor not in [None, "N/A"]:
                 st.write(
-                    f"Overhead Factor: {float(overhead_factor):.4f}"
+                    f"Overhead Factor: {float(overhead_factor):,.4f}"
                 )
             else:
                 st.write("Overhead Factor: N/A")
@@ -423,7 +423,7 @@ with tab_technology:
 
             st.write("Tooling Payment: Upfront CAPEX")
             if tooling_capex_eur > 0:
-                st.write(f"Tooling CAPEX: €{tooling_capex_eur:.2f}")
+                st.write(f"Tooling CAPEX: €{tooling_capex_eur:,.2f}")
             else:
                 st.write("Tooling CAPEX: Not provided")
 
@@ -438,7 +438,7 @@ with tab_technology:
                 if analytical_tooling_cost_status == "calculated":
                     st.write(
                         "Analytical Tooling Cost per Part: "
-                        f"€{analytical_tooling_cost_per_part_eur:.2f}/part"
+                        f"€{analytical_tooling_cost_per_part_eur:,.2f}/part"
                     )
                 else:
                     st.write("Analytical Tooling Cost per Part: Unavailable")
@@ -447,7 +447,7 @@ with tab_technology:
                 machine_rate_resolution_status == "resolved"
                 and machine_rate_eur_hr is not None
             ):
-                st.write(f"Machine Rate: €{machine_rate_eur_hr:.2f}/hr")
+                st.write(f"Machine Rate: €{machine_rate_eur_hr:,.2f}/hr")
             else:
                 st.write("Machine Rate: Unavailable")
 
@@ -590,44 +590,44 @@ with tab_technology:
         st.markdown("#### Manufacturing Costs")
 
         st.write(
-            f"Material Cost: €{cost_breakdown['material_cost']:.2f}"
+            f"Material Cost: €{cost_breakdown['material_cost']:,.2f}"
         )
 
         if machine_cost_status == "calculated":
             st.write(
-                f"Machine Cost: €{cost_breakdown['machine_cost']:.2f}"
+                f"Machine Cost: €{cost_breakdown['machine_cost']:,.2f}"
             )
         else:
             st.write("Machine Cost: Unavailable")
 
         st.write(
-            f"Labour Cost: €{cost_breakdown['labour_cost']:.2f}"
+            f"Labour Cost: €{cost_breakdown['labour_cost']:,.2f}"
         )
 
         st.write("Tooling CAPEX: Shown separately")
         if tooling_capex_eur > 0:
-            st.write(f"Upfront Tooling CAPEX: €{tooling_capex_eur:.2f}")
+            st.write(f"Upfront Tooling CAPEX: €{tooling_capex_eur:,.2f}")
 
     with breakdown_col2:
 
         st.markdown("#### Additional Costs")
 
         st.write(
-            f"Surface Treatment Cost: €{cost_breakdown['surface_treatment_cost']:.2f}"
+            f"Surface Treatment Cost: €{cost_breakdown['surface_treatment_cost']:,.2f}"
         )
 
         st.write(
-            f"Packaging Cost: €{cost_breakdown['packaging_cost']:.2f}"
+            f"Packaging Cost: €{cost_breakdown['packaging_cost']:,.2f}"
         )
 
         st.write(
-            f"Logistics Cost: €{cost_breakdown['logistics_cost']:.2f}"
+            f"Logistics Cost: €{cost_breakdown['logistics_cost']:,.2f}"
         )
 
     if should_cost_status == "complete":
         st.metric(
             "Total Should Cost",
-            f"€{total_should_cost:.2f}"
+            f"€{total_should_cost:,.2f}"
         )
         try:
             current_price_value = float(current_price)
@@ -693,7 +693,7 @@ with tab_technology:
     st.metric(
         "Analytical Fully Loaded Cost per Part",
         (
-            f"€{analytical_fully_loaded_cost_per_part_eur:.2f}"
+            f"€{analytical_fully_loaded_cost_per_part_eur:,.2f}"
             if analytical_fully_loaded_cost_per_part_eur is not None
             else "Unavailable"
         ),
@@ -710,31 +710,31 @@ with tab_technology:
     with col1:
         st.metric(
             "Savings [EUR]",
-            f"€{savings_eur:.2f}" if savings_eur is not None else "Unavailable"
+            f"€{savings_eur:,.2f}" if savings_eur is not None else "Unavailable"
         )
 
     with col2:
         st.metric(
             "Savings [%]",
-            f"{savings_pct:.1f}%" if savings_pct is not None else "Unavailable"
+            f"{savings_pct:,.1f}%" if savings_pct is not None else "Unavailable"
         )
 
     st.markdown("---")
     st.subheader("Modelled Business Case")
     st.metric(
         "Recurring Savings per Part (Modelled)",
-        f"€{savings_eur:.2f}" if savings_eur is not None else "Unavailable",
+        f"€{savings_eur:,.2f}" if savings_eur is not None else "Unavailable",
     )
     st.metric(
         "Annual Modelled Recurring Savings",
         (
-            f"€{modelled_business_case.annual_modelled_recurring_savings_eur:.2f}"
+            f"€{modelled_business_case.annual_modelled_recurring_savings_eur:,.2f}"
             if modelled_business_case.annual_modelled_recurring_savings_eur
             is not None
             else "Unavailable"
         ),
     )
-    st.metric("Upfront Tooling CAPEX", f"€{tooling_capex_eur:.2f}")
+    st.metric("Upfront Tooling CAPEX", f"€{tooling_capex_eur:,.2f}")
     st.metric(
         "Simple Payback Volume (Modelled)",
         (
@@ -748,7 +748,7 @@ with tab_technology:
     st.metric(
         "Simple Payback Years (Modelled)",
         (
-            f"{modelled_business_case.simple_payback_years:.2f}"
+            f"{modelled_business_case.simple_payback_years:,.2f}"
             if modelled_business_case.simple_payback_years is not None
             else modelled_business_case.simple_payback_years_status.replace(
                 "_", " "
