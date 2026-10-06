@@ -59,145 +59,175 @@ tab_technology, tab_masterdata, tab_system = st.tabs(
 
 with tab_technology:
 
-    st.header("Technology Cost Models")
-
-    technology = st.selectbox(
-    "Select Technology",
-    [
-        "HPDC",
-        "CNC Machining",
-        "Injection Molding",
-        "Sand Casting",
-        "HP Multi Jet Fusion"
-    ]
-)
-
-    st.info(
-        f"Selected technology: {technology}"
+    technical_col, input_col, resolved_col = st.columns(
+        [1.05, 1.05, 1.30],
+        gap="large",
     )
 
-    if masterdata_loaded:
+    with technical_col:
 
-        st.success(
-            "Masterdata available"
+        st.subheader("Technical Geometry")
+
+        view_col1, view_col2 = st.columns(2)
+
+        with view_col1:
+            st.file_uploader(
+                "Top view",
+                type=["png", "jpg", "jpeg"],
+                key="creo_top_view",
+            )
+
+        with view_col2:
+            st.file_uploader(
+                "Bottom view",
+                type=["png", "jpg", "jpeg"],
+                key="creo_bottom_view",
+            )
+
+        view_col1, view_col2 = st.columns(2)
+
+        with view_col1:
+            st.file_uploader(
+                "Left view",
+                type=["png", "jpg", "jpeg"],
+                key="creo_left_view",
+            )
+
+        with view_col2:
+            st.file_uploader(
+                "Right view",
+                type=["png", "jpg", "jpeg"],
+                key="creo_right_view",
+            )
+
+        st.subheader("Technology Cost Model")
+
+        technology = st.selectbox(
+            "Select Technology",
+            [
+                "HPDC",
+                "CNC Machining",
+                "Injection Molding",
+                "Sand Casting",
+                "HP Multi Jet Fusion"
+            ]
         )
 
-    else:
-
-        st.error(
-            "Masterdata unavailable"
+        st.info(
+            f"Selected technology: {technology}"
         )
 
-    st.markdown("---")
-    st.subheader("Manufacturing Input")
+        if masterdata_loaded:
 
-    col1, col2, col3 = st.columns(3)
+            st.success(
+                "Masterdata available"
+            )
 
-    with col1:
-        part_weight = st.number_input(
-            "Part Weight [kg]",
-            min_value=0.0,
-            value=0.10,
-            step=0.01
-        )
+        else:
 
-    with col2:
-        annual_volume = st.number_input(
-            "Annual Volume [pcs/year]",
+            st.error(
+                "Masterdata unavailable"
+            )
+
+    with input_col:
+
+        st.subheader("Manufacturing Input")
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            part_weight = st.number_input(
+                "Part Weight [kg]",
+                min_value=0.0,
+                value=0.10,
+                step=0.01
+            )
+
+        with col2:
+            annual_volume = st.number_input(
+                "Annual Volume [pcs/year]",
+                min_value=1,
+                value=10000,
+                step=100
+            )
+
+        with col3:
+            current_price = st.number_input(
+                "Current Price [EUR]",
+                min_value=0.0,
+                value=0.00,
+                step=0.10
+            )
+
+        cycle_time_sec = st.number_input(
+            "Cycle Time [sec]",
             min_value=1,
-            value=10000,
-            step=100
+            value=45,
+            step=1
         )
 
-    with col3:
-        current_price = st.number_input(
-            "Current Price [EUR]",
-            min_value=0.0,
-            value=0.00,
-            step=0.10
-        )
+        col1, col2 = st.columns(2)
 
-    cycle_time_sec = st.number_input(
-        "Cycle Time [sec]",
-        min_value=1,
-        value=45,
-        step=1
-    )
+        with col1:
 
-    col1, col2 = st.columns(2)
+            materials = []
 
-    with col1:
+            if hasattr(masterdata, "materials"):
 
-        materials = []
-
-        if hasattr(masterdata, "materials"):
-
-            try:
-                materials = (
-                    masterdata.materials.iloc[:, 0]
-                    .dropna()
-                    .astype(str)
-                    .tolist()
-                )
-            except:
-                pass
-
-        selected_material = st.selectbox(
-            "Material",
-            materials if materials else ["No Materials Loaded"]
-        )
-
-    with col2:
-
-        regions = []
-
-        if hasattr(masterdata, "regions"):
-
-            try:
-
-                if "Region Name" in masterdata.regions.columns:
-
-                    regions = (
-                        masterdata.regions["Region Name"]
+                try:
+                    materials = (
+                        masterdata.materials.iloc[:, 0]
                         .dropna()
                         .astype(str)
                         .tolist()
                     )
+                except:
+                    pass
 
-            except Exception:
-                pass
+            selected_material = st.selectbox(
+                "Material",
+                materials if materials else ["No Materials Loaded"]
+            )
 
-        selected_region = st.selectbox(
-            "Manufacturing Region",
-            regions if regions else ["No Regions Loaded"]
+        with col2:
+
+            regions = []
+
+            if hasattr(masterdata, "regions"):
+
+                try:
+
+                    if "Region Name" in masterdata.regions.columns:
+
+                        regions = (
+                            masterdata.regions["Region Name"]
+                            .dropna()
+                            .astype(str)
+                            .tolist()
+                        )
+
+                except Exception:
+                    pass
+
+            selected_region = st.selectbox(
+                "Manufacturing Region",
+                regions if regions else ["No Regions Loaded"]
+            )
+
+        surface_treatment = st.selectbox(
+            "Surface Treatment",
+            [
+                "None",
+                "Anodize",
+                "Powder Coat",
+                "Paint",
+                "Other"
+            ]
         )
-
-    surface_treatment = st.selectbox(
-        "Surface Treatment",
-        [
-            "None",
-            "Anodize",
-            "Powder Coat",
-            "Paint",
-            "Other"
-        ]
-    )
-
-    st.markdown("### Selected Input Values")
-
-    st.write(f"Weight: {part_weight:.3f} kg")
-    st.write(f"Volume: {annual_volume:,} pcs/year")
-    st.write(f"Current Price: €{current_price:.2f}")
-    st.write(f"Material: {selected_material}")
-    st.write(f"Region: {selected_region}")
-    st.write(f"Surface Treatment: {surface_treatment}")
 
     # =====================================================
     # PART CONTEXT
     # =====================================================
-
-    st.markdown("---")
-    st.subheader("Resolved Cost Inputs")
 
     material_name = "N/A"
     material_group = "N/A"
@@ -293,51 +323,55 @@ with tab_technology:
     # Display Context
     # -----------------------------------------
 
-    ctx_col1, ctx_col2 = st.columns(2)
+    with resolved_col:
 
-    with ctx_col1:
+        st.subheader("Resolved Cost Inputs")
 
-        st.markdown("#### Material Context")
+        ctx_col1, ctx_col2 = st.columns(2)
 
-        st.write(f"Material Name: {material_name}")
-        st.write(f"Material Group: {material_group}")
-        
-        if density not in [None, "N/A"]:
-            st.write(
-                f"Density: {float(density):,.0f} kg/m³"
-            )
-        else:
-            st.write("Density: N/A")
+        with ctx_col1:
 
-    if material_cost not in [None, "N/A"]:
-        st.write(
-            f"Default Material Cost: €{float(material_cost):.2f}/kg"
-        )
-    else:
-        st.write(
-            "Default Material Cost: N/A")
+            st.markdown("#### Material Context")
 
-    with ctx_col2:
+            st.write(f"Material Name: {material_name}")
+            st.write(f"Material Group: {material_group}")
 
-        st.markdown("#### Region Context")
+            if density not in [None, "N/A"]:
+                st.write(
+                    f"Density: {float(density):,.0f} kg/m³"
+                )
+            else:
+                st.write("Density: N/A")
 
-        st.write(f"Region: {selected_region}")
+            if material_cost not in [None, "N/A"]:
+                st.write(
+                    f"Default Material Cost: €{float(material_cost):.2f}/kg"
+                )
+            else:
+                st.write(
+                    "Default Material Cost: N/A")
 
-        if labour_rate not in [None, "N/A"]:
-            st.write(
-                f"Labour Rate: {float(labour_rate):.2f} {currency}/hr"
-            )
-        else:
-            st.write("Labour Rate: N/A")
+        with ctx_col2:
 
-        if overhead_factor not in [None, "N/A"]:
-            st.write(
-                f"Overhead Factor: {float(overhead_factor):.4f}"
-            )
-        else:
-            st.write("Overhead Factor: N/A")
+            st.markdown("#### Region Context")
 
-        st.write(f"Currency: {currency}")
+            st.write(f"Region: {selected_region}")
+
+            if labour_rate not in [None, "N/A"]:
+                st.write(
+                    f"Labour Rate: {float(labour_rate):.2f} {currency}/hr"
+                )
+            else:
+                st.write("Labour Rate: N/A")
+
+            if overhead_factor not in [None, "N/A"]:
+                st.write(
+                    f"Overhead Factor: {float(overhead_factor):.4f}"
+                )
+            else:
+                st.write("Overhead Factor: N/A")
+
+            st.write(f"Currency: {currency}")
 
     # -----------------------------------------
     # Session State
@@ -464,41 +498,41 @@ with tab_technology:
         "Total Should Cost",
         f"€{total_should_cost:.2f}"
     )
-try:
-    current_price_value = float(current_price)
-    savings_eur = current_price_value - total_should_cost
+    try:
+        current_price_value = float(current_price)
+        savings_eur = current_price_value - total_should_cost
 
-    if current_price_value > 0:
-        savings_pct = (
-            savings_eur /
-            current_price_value
-        ) * 100
-    else:
+        if current_price_value > 0:
+            savings_pct = (
+                savings_eur /
+                current_price_value
+            ) * 100
+        else:
+            savings_pct = 0.0
+
+    except Exception:
+        savings_eur = 0.0
         savings_pct = 0.0
 
-except Exception:
-    savings_eur = 0.0
-    savings_pct = 0.0
+    st.markdown("---")
 
-st.markdown("---")
-
-st.subheader(
-    "Cost Intelligence Summary"
-)
-
-col1, col2 = st.columns(2)
-
-with col1:
-    st.metric(
-        "Savings [EUR]",
-        f"€{savings_eur:.2f}"
+    st.subheader(
+        "Cost Intelligence Summary"
     )
 
-with col2:
-    st.metric(
-        "Savings [%]",
-        f"{savings_pct:.1f}%"
-    )
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.metric(
+            "Savings [EUR]",
+            f"€{savings_eur:.2f}"
+        )
+
+    with col2:
+        st.metric(
+            "Savings [%]",
+            f"{savings_pct:.1f}%"
+        )
 # =====================================================
 # MASTERDATA
 # =====================================================
