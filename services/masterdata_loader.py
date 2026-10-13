@@ -16,6 +16,7 @@ class MasterDataLoader:
         self.routing_operations = None
         self.technology_rules = None
         self.technology_cost_library = None
+        self.surface_treatment_rates = None
 
     def load_all(self):
 
@@ -49,6 +50,10 @@ class MasterDataLoader:
 
         self.technology_cost_library = pd.read_excel(
             self.masterdata_path / "Technology_Cost_Library.xlsx"
+        )
+
+        self.surface_treatment_rates = pd.read_excel(
+            self.masterdata_path / "Surface_Treatment_Rates.xlsx"
         )
 
         return True
