@@ -81,34 +81,42 @@ with tab_technology:
         view_col1, view_col2 = st.columns(2)
 
         with view_col1:
-            st.file_uploader(
+            uploaded_top_view = st.file_uploader(
                 "Top view",
                 type=["png", "jpg", "jpeg"],
                 key="creo_top_view",
             )
+            if uploaded_top_view is not None:
+                st.image(uploaded_top_view, width="stretch")
 
         with view_col2:
-            st.file_uploader(
+            uploaded_bottom_view = st.file_uploader(
                 "Bottom view",
                 type=["png", "jpg", "jpeg"],
                 key="creo_bottom_view",
             )
+            if uploaded_bottom_view is not None:
+                st.image(uploaded_bottom_view, width="stretch")
 
         view_col1, view_col2 = st.columns(2)
 
         with view_col1:
-            st.file_uploader(
+            uploaded_left_view = st.file_uploader(
                 "Left view",
                 type=["png", "jpg", "jpeg"],
                 key="creo_left_view",
             )
+            if uploaded_left_view is not None:
+                st.image(uploaded_left_view, width="stretch")
 
         with view_col2:
-            st.file_uploader(
+            uploaded_right_view = st.file_uploader(
                 "Right view",
                 type=["png", "jpg", "jpeg"],
                 key="creo_right_view",
             )
+            if uploaded_right_view is not None:
+                st.image(uploaded_right_view, width="stretch")
 
         st.subheader("Technology Cost Model")
 
