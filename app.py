@@ -260,12 +260,47 @@ with tab_technology:
             "Surface Treatment",
             [
                 "None",
-                "Anodize",
-                "Powder Coat",
-                "Paint",
+                "Anodizing",
+                "Powder Coating",
+                "Wet Painting",
+                "PVD",
                 "Other"
             ]
         )
+
+        no_surface_treatment = surface_treatment == "None"
+        surface_area_key = "surface_area_m2_input"
+        surface_treatment_addon_key = (
+            "surface_treatment_addon_eur_per_part_input"
+        )
+        if no_surface_treatment:
+            st.session_state[surface_area_key] = 0.0
+            st.session_state[surface_treatment_addon_key] = 0.0
+
+        surface_area_col, surface_treatment_addon_col = st.columns(2)
+        with surface_area_col:
+            surface_area_m2 = st.number_input(
+                "Surface Area [m²]",
+                min_value=0.0,
+                step=0.01,
+                format="%.4f",
+                key=surface_area_key,
+                disabled=no_surface_treatment,
+            )
+
+        with surface_treatment_addon_col:
+            surface_treatment_addon_eur_per_part = st.number_input(
+                "Surface Treatment Add-on [EUR/part]",
+                min_value=0.0,
+                step=0.01,
+                format="%.2f",
+                key=surface_treatment_addon_key,
+                disabled=no_surface_treatment,
+            )
+
+        if no_surface_treatment:
+            surface_area_m2 = 0.0
+            surface_treatment_addon_eur_per_part = 0.0
 
     # =====================================================
     # PART CONTEXT
