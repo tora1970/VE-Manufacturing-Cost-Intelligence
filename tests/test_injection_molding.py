@@ -1,6 +1,7 @@
 import pytest
 
-from models.injection_molding import InjectionMoldingInput
+from models.injection_molding import InjectionMoldingInput, InjectionMoldingModel
+from services.cost_engine import CostEngine
 
 
 def valid_input(**overrides):
@@ -26,6 +27,89 @@ def valid_input(**overrides):
 
 def test_valid_input_is_accepted():
     valid_input().validate()
+
+
+def test_valid_input_has_deterministic_cost_breakdown():
+    result = InjectionMoldingModel().calculate(valid_input())
+
+    assert result.material_cost == 0.3333
+    assert result.machine_cost == 0.3906
+    assert result.labour_cost == 0.0469
+    assert result.tooling_cost == 0.08
+    assert result.scrap_cost == 0.0174
+    assert result.overhead_cost == 0.0868
+    assert result.total_cost == 0.955
+    assert result.total_cost > 0
+
+
+def test_annual_cost_uses_rounded_total_cost():
+    data = valid_input()
+
+    result = InjectionMoldingModel().calculate(data)
+
+    assert result.annual_cost == 23875.0
+    assert result.annual_cost == round(result.total_cost * data.annual_volume, 2)
+
+
+def test_material_cost_uses_material_utilization():
+    result = InjectionMoldingModel().calculate(valid_input())
+
+    assert result.material_cost == 0.3333
+
+
+def test_machine_cost_is_amortized_across_cavities():
+    result = InjectionMoldingModel().calculate(valid_input(cavities=4))
+
+    assert result.machine_cost == 0.1953
+
+
+def test_tooling_cost_is_amortized_across_cavities():
+    result = InjectionMoldingModel().calculate(valid_input(cavities=4))
+
+    assert result.tooling_cost == 0.04
+
+
+def test_lower_oee_increases_machine_and_labour_costs():
+    model = InjectionMoldingModel()
+    baseline = model.calculate(valid_input())
+    lower_oee = model.calculate(valid_input(oee=0.4))
+
+    assert lower_oee.machine_cost == 0.7812
+    assert lower_oee.labour_cost == 0.0938
+    assert lower_oee.machine_cost > baseline.machine_cost
+    assert lower_oee.labour_cost > baseline.labour_cost
+
+
+def test_zero_scrap_rate_has_no_scrap_cost():
+    result = InjectionMoldingModel().calculate(valid_input(scrap_rate=0))
+
+    assert result.scrap_cost == 0
+
+
+def test_positive_scrap_rate_adds_scrap_cost():
+    result = InjectionMoldingModel().calculate(valid_input(scrap_rate=0.02))
+
+    assert result.scrap_cost == 0.0174
+
+
+def test_zero_overhead_rate_has_no_overhead_cost():
+    result = InjectionMoldingModel().calculate(valid_input(overhead_rate=0))
+
+    assert result.overhead_cost == 0
+
+
+def test_cost_engine_calculates_injection_molding_cost():
+    data = valid_input()
+
+    result = CostEngine().calculate(InjectionMoldingModel(), data)
+
+    assert result.total_cost == 0.955
+
+
+def test_currency_is_propagated_to_cost_breakdown():
+    result = InjectionMoldingModel().calculate(valid_input(currency="USD"))
+
+    assert result.currency == "USD"
 
 
 @pytest.mark.parametrize(

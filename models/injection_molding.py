@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -73,3 +74,65 @@ class InjectionMoldingInput:
             raise ValueError(
                 "Labour and tooling values cannot be negative."
             )
+
+
+@dataclass(frozen=True)
+class InjectionMoldingCostBreakdown:
+    material_cost: float
+    machine_cost: float
+    labour_cost: float
+    tooling_cost: float
+    scrap_cost: float
+    overhead_cost: float
+    total_cost: float
+    annual_cost: float
+    currency: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+class InjectionMoldingModel:
+    technology = "Injection Molding"
+
+    def calculate(
+        self, data: InjectionMoldingInput
+    ) -> InjectionMoldingCostBreakdown:
+        data.validate()
+        gross_weight_kg = data.part_weight_kg / data.material_utilization
+        material_cost = gross_weight_kg * data.material_price_eur_kg
+        effective_cycle_h = data.cycle_time_s / 3600 / data.oee
+        machine_cost = (
+            effective_cycle_h * data.machine_rate_eur_h / data.cavities
+        )
+        labour_cost = (
+            effective_cycle_h
+            * data.labour_rate_eur_h
+            * data.operators
+            / data.cavities
+        )
+        tooling_cost = data.tooling_cost_eur / (
+            data.tool_life_shots * data.cavities
+        )
+        direct_cost = (
+            material_cost + machine_cost + labour_cost + tooling_cost
+        )
+        scrap_cost = (
+            direct_cost * data.scrap_rate / (1 - data.scrap_rate)
+            if data.scrap_rate
+            else 0.0
+        )
+        overhead_cost = (direct_cost + scrap_cost) * data.overhead_rate
+        total_cost = direct_cost + scrap_cost + overhead_cost
+        rounded_total_cost = round(total_cost, 4)
+        return InjectionMoldingCostBreakdown(
+            material_cost=round(material_cost, 4),
+            machine_cost=round(machine_cost, 4),
+            labour_cost=round(labour_cost, 4),
+            tooling_cost=round(tooling_cost, 4),
+            scrap_cost=round(scrap_cost, 4),
+            overhead_cost=round(overhead_cost, 4),
+            total_cost=rounded_total_cost,
+            annual_cost=round(rounded_total_cost * data.annual_volume, 2),
+            currency=data.currency,
+        )
