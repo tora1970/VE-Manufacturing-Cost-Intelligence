@@ -15,6 +15,11 @@ from models.manufacturing_cost_layers import (
     ProcessCostLayer,
     SecondaryProcessCostLayer,
 )
+from services.setup_cost_calculation import (
+    SetupCostInput,
+    SetupCostResult,
+    calculate_setup_cost,
+)
 
 
 def legacy_excluded_tooling_cost(result: InjectionMoldingCostBreakdown) -> float:
@@ -25,6 +30,8 @@ def legacy_excluded_tooling_cost(result: InjectionMoldingCostBreakdown) -> float
 def adapt_injection_molding_cost_layers(
     data: InjectionMoldingInput,
     result: InjectionMoldingCostBreakdown,
+    *,
+    setup: SetupCostInput | SetupCostResult | None = None,
 ) -> ManufacturingCostBreakdown:
     """Translate the legacy Injection Molding result into the shared cost-layer contract.
 
@@ -38,6 +45,24 @@ def adapt_injection_molding_cost_layers(
     if data.currency != result.currency:
         raise ValueError("Input and result currency labels must match.")
 
+    resolved_setup = None
+    if setup is not None:
+        if isinstance(setup, SetupCostInput):
+            resolved_setup = calculate_setup_cost(setup)
+        elif isinstance(setup, SetupCostResult):
+            resolved_setup = setup
+        else:
+            raise TypeError("setup must be a SetupCostInput or SetupCostResult.")
+
+        if resolved_setup.currency != "EUR":
+            raise ValueError("Setup cost currency must be 'EUR'.")
+        if data.currency != resolved_setup.currency:
+            raise ValueError("Input and setup currency labels must match.")
+        if result.currency != resolved_setup.currency:
+            raise ValueError("Result and setup currency labels must match.")
+
+    process_setup_cost = resolved_setup.setup_cost_per_part if resolved_setup is not None else 0.0
+
     material = MaterialCostLayer(
         base_material_cost=result.material_cost,
         material_loss_cost=0.0,
@@ -46,7 +71,7 @@ def adapt_injection_molding_cost_layers(
     process = ProcessCostLayer(
         machine_cost=result.machine_cost,
         labour_cost=result.labour_cost,
-        setup_cost=0.0,
+        setup_cost=process_setup_cost,
         process_scrap_cost=result.scrap_cost,
         production_overhead_cost=result.overhead_cost,
     )
