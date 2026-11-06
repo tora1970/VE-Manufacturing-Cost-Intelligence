@@ -9,6 +9,7 @@ from services.injection_molding_cost_layer_adapter import (
     adapt_injection_molding_cost_layers,
     legacy_excluded_tooling_cost,
 )
+from services.process_scrap_calculation import ProcessScrapInput, calculate_process_scrap
 from services.setup_cost_calculation import SetupCostInput, calculate_setup_cost
 
 
@@ -584,6 +585,215 @@ def test_a9_setup_reference_and_layer_totals():
     assert adapted.process.setup_cost == pytest.approx(0.2601, abs=1e-4)
     assert adapted.process.total_process_cost == pytest.approx(1.1796, abs=1e-4)
     assert adapted.manufacturing_should_cost == pytest.approx(3.7546, abs=1e-4)
+
+
+def test_process_scrap_calculation_zero_scrap():
+    process_scrap = ProcessScrapInput(
+        process_scrap_rate=0.0,
+        material_cost_per_attempt=10.0,
+        machine_cost_per_attempt=4.0,
+        labour_cost_per_attempt=2.0,
+        currency="EUR",
+    )
+
+    result = calculate_process_scrap(process_scrap)
+
+    assert result.process_yield == pytest.approx(1.0)
+    assert result.attempts_per_good_part == pytest.approx(1.0)
+    assert result.material_cost_per_good_part == pytest.approx(10.0)
+    assert result.machine_cost_per_good_part == pytest.approx(4.0)
+    assert result.labour_cost_per_good_part == pytest.approx(2.0)
+    assert result.total_process_scrap_cost == pytest.approx(0.0)
+
+
+def test_process_scrap_calculation_ten_percent_scrap():
+    process_scrap = ProcessScrapInput(
+        process_scrap_rate=0.10,
+        material_cost_per_attempt=1.03,
+        machine_cost_per_attempt=0.7541,
+        labour_cost_per_attempt=0.1654,
+        currency="EUR",
+    )
+
+    result = calculate_process_scrap(process_scrap)
+
+    assert result.process_yield == pytest.approx(0.9)
+    assert result.attempts_per_good_part == pytest.approx(1.1111111111)
+    assert result.material_cost_per_good_part == pytest.approx(1.1444444444444446)
+    assert result.machine_cost_per_good_part == pytest.approx(0.8378888888888889)
+    assert result.labour_cost_per_good_part == pytest.approx(0.1837777777777778)
+    assert result.material_scrap_cost == pytest.approx(0.11444444444444446)
+    assert result.machine_scrap_cost == pytest.approx(0.08378888888888889)
+    assert result.labour_scrap_cost == pytest.approx(0.018377777777777794)
+    assert result.total_process_scrap_cost == pytest.approx(0.2166111111111111)
+
+
+def test_process_scrap_calculation_rejects_invalid_rates():
+    with pytest.raises(ValueError):
+        ProcessScrapInput(-0.01, 1.0, 1.0, 1.0, "EUR")
+    with pytest.raises(ValueError):
+        ProcessScrapInput(1.0, 1.0, 1.0, 1.0, "EUR")
+    with pytest.raises(ValueError):
+        ProcessScrapInput(0.2, float("nan"), 1.0, 1.0, "EUR")
+    with pytest.raises(ValueError):
+        ProcessScrapInput(0.2, 1.0, float("inf"), 1.0, "EUR")
+
+
+def test_process_scrap_calculation_rejects_non_eur_currency():
+    with pytest.raises(ValueError):
+        ProcessScrapInput(0.1, 1.0, 1.0, 1.0, "USD")
+
+
+def test_process_scrap_calculation_is_immutable():
+    process_scrap = ProcessScrapInput(0.1, 10.0, 2.0, 1.0, "EUR")
+
+    with pytest.raises(Exception):
+        process_scrap.process_scrap_rate = 0.2
+
+
+def test_adapter_uses_explicit_process_scrap_without_legacy_double_count():
+    data = valid_input()
+    legacy = InjectionMoldingModel().calculate(data)
+    process_scrap = ProcessScrapInput(
+        process_scrap_rate=0.10,
+        material_cost_per_attempt=legacy.material_cost,
+        machine_cost_per_attempt=legacy.machine_cost,
+        labour_cost_per_attempt=legacy.labour_cost,
+        currency="EUR",
+    )
+
+    adapted = adapt_injection_molding_cost_layers(data, legacy, process_scrap=process_scrap)
+
+    assert adapted.material.base_material_cost == pytest.approx(legacy.material_cost / 0.9)
+    assert adapted.process.machine_cost == pytest.approx(legacy.machine_cost / 0.9)
+    assert adapted.process.labour_cost == pytest.approx(legacy.labour_cost / 0.9)
+    assert adapted.process.process_scrap_cost == 0.0
+    assert adapted.manufacturing_should_cost == pytest.approx(
+        adapted.material.total_material_cost + adapted.process.total_process_cost
+    )
+
+
+def test_adapter_explicit_process_scrap_supersedes_legacy_scrap_mapping():
+    data = valid_input(scrap_rate=0.02)
+    legacy = InjectionMoldingModel().calculate(data)
+    process_scrap = ProcessScrapInput(
+        process_scrap_rate=0.10,
+        material_cost_per_attempt=legacy.material_cost,
+        machine_cost_per_attempt=legacy.machine_cost,
+        labour_cost_per_attempt=legacy.labour_cost,
+        currency="EUR",
+    )
+
+    adapted = adapt_injection_molding_cost_layers(data, legacy, process_scrap=process_scrap)
+
+    assert adapted.process.process_scrap_cost == 0.0
+    assert adapted.process.machine_cost != legacy.machine_cost
+    assert adapted.process.labour_cost != legacy.labour_cost
+    assert adapted.material.base_material_cost != legacy.material_cost
+
+
+def test_adapter_setup_is_not_double_scaled_with_process_scrap():
+    data = valid_input()
+    legacy = InjectionMoldingModel().calculate(data)
+    setup = SetupCostInput(
+        setup_time_h=6.0,
+        machine_rate_eur_h=10.0,
+        labour_rate_eur_h=5.0,
+        operators=1.0,
+        batch_size_pcs=100,
+        currency="EUR",
+    )
+    process_scrap = ProcessScrapInput(
+        process_scrap_rate=0.10,
+        material_cost_per_attempt=legacy.material_cost,
+        machine_cost_per_attempt=legacy.machine_cost,
+        labour_cost_per_attempt=legacy.labour_cost,
+        currency="EUR",
+    )
+
+    adapted = adapt_injection_molding_cost_layers(
+        data,
+        legacy,
+        setup=setup,
+        process_scrap=process_scrap,
+    )
+
+    assert adapted.process.setup_cost == pytest.approx(0.9)
+    assert adapted.process.process_scrap_cost == 0.0
+    assert adapted.process.machine_cost == pytest.approx(legacy.machine_cost / 0.9)
+    assert adapted.process.labour_cost == pytest.approx(legacy.labour_cost / 0.9)
+
+
+def test_adapter_tooling_remains_excluded_with_explicit_process_scrap():
+    data = valid_input(tooling_cost_eur=80000)
+    legacy = InjectionMoldingModel().calculate(data)
+    process_scrap = ProcessScrapInput(
+        process_scrap_rate=0.10,
+        material_cost_per_attempt=legacy.material_cost,
+        machine_cost_per_attempt=legacy.machine_cost,
+        labour_cost_per_attempt=legacy.labour_cost,
+        currency="EUR",
+    )
+
+    adapted = adapt_injection_molding_cost_layers(data, legacy, process_scrap=process_scrap)
+
+    assert legacy_excluded_tooling_cost(legacy) == legacy.tooling_cost
+    assert "tooling_cost" not in ManufacturingCostBreakdown.__dataclass_fields__
+
+
+def test_adapters_without_process_scrap_are_unchanged():
+    data = valid_input()
+    legacy = InjectionMoldingModel().calculate(data)
+
+    adapted = adapt_injection_molding_cost_layers(data, legacy)
+
+    assert adapted.process.machine_cost == legacy.machine_cost
+    assert adapted.process.labour_cost == legacy.labour_cost
+    assert adapted.process.process_scrap_cost == legacy.scrap_cost
+    assert adapted.material.base_material_cost == legacy.material_cost
+
+
+def test_a9_process_scrap_reference_case():
+    data = InjectionMoldingInput(
+        annual_volume=11504,
+        part_weight_kg=1.0,
+        material_price_eur_kg=2.5,
+        material_utilization=1.0 / 1.03,
+        cycle_time_s=94,
+        cavities=1,
+        machine_rate_eur_h=28.881166666666665,
+        oee=1.0,
+        labour_rate_eur_h=12.669741252,
+        operators=0.5,
+        scrap_rate=0.0,
+        tooling_cost_eur=0.0,
+        tool_life_shots=1,
+        overhead_rate=0.0,
+        currency="EUR",
+        material="ASA",
+        region="Hungary",
+    )
+    legacy = InjectionMoldingModel().calculate(data)
+    process_scrap = ProcessScrapInput(
+        process_scrap_rate=0.10,
+        material_cost_per_attempt=legacy.material_cost,
+        machine_cost_per_attempt=legacy.machine_cost,
+        labour_cost_per_attempt=legacy.labour_cost,
+        currency="EUR",
+    )
+
+    result = calculate_process_scrap(process_scrap)
+    adapted = adapt_injection_molding_cost_layers(data, legacy, process_scrap=result)
+
+    assert result.process_yield == pytest.approx(0.9)
+    assert result.attempts_per_good_part == pytest.approx(1.1111111111)
+    assert result.material_cost_per_good_part == pytest.approx(2.8611111111111116)
+    assert result.machine_cost_per_good_part == pytest.approx(0.8378888888888889)
+    assert result.labour_cost_per_good_part == pytest.approx(0.1837777777777778)
+    assert adapted.material.base_material_cost == pytest.approx(2.8611111111111116)
+    assert adapted.process.machine_cost == pytest.approx(0.8378888888888889)
+    assert adapted.process.labour_cost == pytest.approx(0.1837777777777778)
+    assert adapted.manufacturing_should_cost == pytest.approx(2.8611111111111116 + 0.8378888888888889 + 0.1837777777777778)
 
 
 def test_a9_compatibility_result_matches_expected_layer_totals():

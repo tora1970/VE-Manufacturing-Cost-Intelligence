@@ -15,6 +15,11 @@ from models.manufacturing_cost_layers import (
     ProcessCostLayer,
     SecondaryProcessCostLayer,
 )
+from services.process_scrap_calculation import (
+    ProcessScrapInput,
+    ProcessScrapResult,
+    calculate_process_scrap,
+)
 from services.setup_cost_calculation import (
     SetupCostInput,
     SetupCostResult,
@@ -32,6 +37,7 @@ def adapt_injection_molding_cost_layers(
     result: InjectionMoldingCostBreakdown,
     *,
     setup: SetupCostInput | SetupCostResult | None = None,
+    process_scrap: ProcessScrapInput | ProcessScrapResult | None = None,
 ) -> ManufacturingCostBreakdown:
     """Translate the legacy Injection Molding result into the shared cost-layer contract.
 
@@ -61,20 +67,50 @@ def adapt_injection_molding_cost_layers(
         if result.currency != resolved_setup.currency:
             raise ValueError("Result and setup currency labels must match.")
 
+    resolved_scarp = None
+    if process_scrap is not None:
+        if isinstance(process_scrap, ProcessScrapInput):
+            resolved_scarp = calculate_process_scrap(process_scrap)
+        elif isinstance(process_scrap, ProcessScrapResult):
+            resolved_scarp = process_scrap
+        else:
+            raise TypeError("process_scrap must be a ProcessScrapInput or ProcessScrapResult.")
+
+        if resolved_scarp.currency != "EUR":
+            raise ValueError("Process scrap currency must be 'EUR'.")
+        if data.currency != resolved_scarp.currency:
+            raise ValueError("Input and process scrap currency labels must match.")
+        if result.currency != resolved_scarp.currency:
+            raise ValueError("Result and process scrap currency labels must match.")
+
     process_setup_cost = resolved_setup.setup_cost_per_part if resolved_setup is not None else 0.0
 
-    material = MaterialCostLayer(
-        base_material_cost=result.material_cost,
-        material_loss_cost=0.0,
-        material_overhead_cost=0.0,
-    )
-    process = ProcessCostLayer(
-        machine_cost=result.machine_cost,
-        labour_cost=result.labour_cost,
-        setup_cost=process_setup_cost,
-        process_scrap_cost=result.scrap_cost,
-        production_overhead_cost=result.overhead_cost,
-    )
+    if resolved_scarp is not None:
+        material = MaterialCostLayer(
+            base_material_cost=resolved_scarp.material_cost_per_good_part,
+            material_loss_cost=0.0,
+            material_overhead_cost=0.0,
+        )
+        process = ProcessCostLayer(
+            machine_cost=resolved_scarp.machine_cost_per_good_part,
+            labour_cost=resolved_scarp.labour_cost_per_good_part,
+            setup_cost=process_setup_cost,
+            process_scrap_cost=0.0,
+            production_overhead_cost=result.overhead_cost,
+        )
+    else:
+        material = MaterialCostLayer(
+            base_material_cost=result.material_cost,
+            material_loss_cost=0.0,
+            material_overhead_cost=0.0,
+        )
+        process = ProcessCostLayer(
+            machine_cost=result.machine_cost,
+            labour_cost=result.labour_cost,
+            setup_cost=process_setup_cost,
+            process_scrap_cost=result.scrap_cost,
+            production_overhead_cost=result.overhead_cost,
+        )
     secondary_processes = SecondaryProcessCostLayer(())
 
     return ManufacturingCostBreakdown(
