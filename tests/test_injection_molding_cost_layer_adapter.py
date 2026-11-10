@@ -58,7 +58,7 @@ def test_material_mapping_is_legacy_pure_and_no_material_overhead_is_added():
     assert adapted.material.material_overhead_cost == 0.0
 
 
-def test_process_mapping_preserves_legacy_values_and_zero_setup():
+def test_process_mapping_uses_explicit_overhead_and_zero_setup():
     data = valid_input()
     legacy = InjectionMoldingModel().calculate(data)
 
@@ -68,7 +68,9 @@ def test_process_mapping_preserves_legacy_values_and_zero_setup():
     assert adapted.process.labour_cost == legacy.labour_cost
     assert adapted.process.setup_cost == 0.0
     assert adapted.process.process_scrap_cost == legacy.scrap_cost
-    assert adapted.process.production_overhead_cost == legacy.overhead_cost
+    assert adapted.process.production_overhead_cost == pytest.approx(
+        (legacy.machine_cost + legacy.labour_cost) * data.overhead_rate
+    )
 
 
 def test_secondary_process_layer_is_empty_and_total_is_zero():
@@ -81,7 +83,7 @@ def test_secondary_process_layer_is_empty_and_total_is_zero():
     assert adapted.secondary_processes.total_secondary_process_cost == 0.0
 
 
-def test_manufacturing_should_cost_matches_legacy_material_machine_labour_scrap_and_overhead():
+def test_manufacturing_should_cost_uses_explicit_production_overhead():
     data = valid_input()
     legacy = InjectionMoldingModel().calculate(data)
 
@@ -92,7 +94,7 @@ def test_manufacturing_should_cost_matches_legacy_material_machine_labour_scrap_
         + legacy.machine_cost
         + legacy.labour_cost
         + legacy.scrap_cost
-        + legacy.overhead_cost
+        + (legacy.machine_cost + legacy.labour_cost) * data.overhead_rate
     )
     assert adapted.manufacturing_should_cost == pytest.approx(expected)
 
@@ -103,8 +105,12 @@ def test_legacy_tooling_cost_is_excluded_from_manufacturing_should_cost():
 
     adapted = adapt_injection_molding_cost_layers(data, legacy)
 
-    assert adapted.manufacturing_should_cost + legacy.tooling_cost == pytest.approx(
-        legacy.total_cost, rel=1e-9
+    assert adapted.manufacturing_should_cost == pytest.approx(
+        legacy.material_cost
+        + legacy.machine_cost
+        + legacy.labour_cost
+        + legacy.scrap_cost
+        + (legacy.machine_cost + legacy.labour_cost) * data.overhead_rate
     )
     assert legacy_excluded_tooling_cost(legacy) == legacy.tooling_cost
 
@@ -427,7 +433,7 @@ def test_setup_cost_calculation_is_immutable():
         setup.setup_time_h = 2.0
 
 
-def test_adapter_keeps_existing_no_setup_call_unchanged():
+def test_adapter_calculates_overhead_without_setup_or_legacy_overhead():
     data = valid_input()
     legacy = InjectionMoldingModel().calculate(data)
 
@@ -435,8 +441,12 @@ def test_adapter_keeps_existing_no_setup_call_unchanged():
 
     assert adapted.process.setup_cost == 0.0
     assert adapted.process.total_process_cost == pytest.approx(
-        legacy.machine_cost + legacy.labour_cost + legacy.scrap_cost + legacy.overhead_cost
+        legacy.machine_cost
+        + legacy.labour_cost
+        + legacy.scrap_cost
+        + (legacy.machine_cost + legacy.labour_cost) * data.overhead_rate
     )
+    assert adapted.process.production_overhead_cost != legacy.overhead_cost
 
 
 def test_adapter_maps_setup_only_to_process_setup_cost():
@@ -457,10 +467,17 @@ def test_adapter_maps_setup_only_to_process_setup_cost():
     assert adapted.process.machine_cost == legacy.machine_cost
     assert adapted.process.labour_cost == legacy.labour_cost
     assert adapted.process.process_scrap_cost == legacy.scrap_cost
-    assert adapted.process.production_overhead_cost == legacy.overhead_cost
+    assert adapted.process.production_overhead_cost == pytest.approx(
+        (
+            legacy.machine_cost
+            + legacy.labour_cost
+            + setup.setup_cost_per_part
+        )
+        * data.overhead_rate
+    )
 
 
-def test_adapter_increases_manufacturing_should_cost_exactly_by_setup_cost():
+def test_adapter_includes_setup_in_production_overhead_basis():
     data = valid_input()
     legacy = InjectionMoldingModel().calculate(data)
     setup = calculate_setup_cost(
@@ -477,7 +494,17 @@ def test_adapter_increases_manufacturing_should_cost_exactly_by_setup_cost():
     adapted = adapt_injection_molding_cost_layers(data, legacy, setup=setup)
 
     assert adapted.manufacturing_should_cost == pytest.approx(
-        legacy.material_cost + legacy.machine_cost + legacy.labour_cost + legacy.scrap_cost + legacy.overhead_cost + setup.setup_cost_per_part
+        legacy.material_cost
+        + legacy.machine_cost
+        + legacy.labour_cost
+        + legacy.scrap_cost
+        + setup.setup_cost_per_part
+        + (
+            legacy.machine_cost
+            + legacy.labour_cost
+            + setup.setup_cost_per_part
+        )
+        * data.overhead_rate
     )
 
 
@@ -519,8 +546,18 @@ def test_adapter_keeps_tooling_excluded_with_setup():
     adapted = adapt_injection_molding_cost_layers(data, legacy, setup=setup)
 
     assert legacy_excluded_tooling_cost(legacy) == legacy.tooling_cost
-    assert adapted.manufacturing_should_cost + legacy.tooling_cost == pytest.approx(
-        legacy.total_cost + setup.setup_cost_per_part
+    assert adapted.manufacturing_should_cost == pytest.approx(
+        legacy.material_cost
+        + legacy.machine_cost
+        + legacy.labour_cost
+        + legacy.scrap_cost
+        + setup.setup_cost_per_part
+        + (
+            legacy.machine_cost
+            + legacy.labour_cost
+            + setup.setup_cost_per_part
+        )
+        * data.overhead_rate
     )
 
 
@@ -671,6 +708,38 @@ def test_adapter_uses_explicit_process_scrap_without_legacy_double_count():
     assert adapted.manufacturing_should_cost == pytest.approx(
         adapted.material.total_material_cost + adapted.process.total_process_cost
     )
+
+
+def test_adapter_uses_explicit_good_part_costs_for_production_overhead():
+    data = valid_input(overhead_rate=0.40)
+    legacy = InjectionMoldingModel().calculate(data)
+    process_scrap = ProcessScrapInput(
+        process_scrap_rate=0.10,
+        material_cost_per_attempt=2.5,
+        machine_cost_per_attempt=0.7541,
+        labour_cost_per_attempt=0.1654,
+        currency="EUR",
+    )
+    setup = SetupCostInput(
+        setup_time_h=0.2601,
+        machine_rate_eur_h=1.0,
+        labour_rate_eur_h=0.0,
+        operators=0.0,
+        batch_size_pcs=1.0,
+        currency="EUR",
+    )
+
+    adapted = adapt_injection_molding_cost_layers(
+        data, legacy, setup=setup, process_scrap=process_scrap
+    )
+
+    assert adapted.process.machine_cost == pytest.approx(0.8379, abs=1e-4)
+    assert adapted.process.labour_cost == pytest.approx(0.1838, abs=1e-4)
+    assert adapted.process.setup_cost == pytest.approx(0.2601, abs=1e-4)
+    assert adapted.process.production_overhead_cost == pytest.approx(
+        0.5127, abs=1e-4
+    )
+    assert adapted.process.production_overhead_cost != legacy.overhead_cost
 
 
 def test_adapter_explicit_process_scrap_supersedes_legacy_scrap_mapping():
