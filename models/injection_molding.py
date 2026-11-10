@@ -1,7 +1,16 @@
 from __future__ import annotations
 
+import math
 from dataclasses import asdict, dataclass
 from typing import Any
+
+
+def _validate_finite_numeric_inputs(values: dict[str, int | float]) -> None:
+    for name, value in values.items():
+        if isinstance(value, int):
+            continue
+        if not math.isfinite(value):
+            raise ValueError(f"{name} must be finite.")
 
 
 @dataclass(frozen=True)
@@ -26,6 +35,25 @@ class InjectionMoldingInput:
     machine: str = ""
 
     def validate(self) -> None:
+        _validate_finite_numeric_inputs(
+            {
+                "annual_volume": self.annual_volume,
+                "part_weight_kg": self.part_weight_kg,
+                "material_price_eur_kg": self.material_price_eur_kg,
+                "material_utilization": self.material_utilization,
+                "cycle_time_s": self.cycle_time_s,
+                "cavities": self.cavities,
+                "machine_rate_eur_h": self.machine_rate_eur_h,
+                "oee": self.oee,
+                "labour_rate_eur_h": self.labour_rate_eur_h,
+                "operators": self.operators,
+                "scrap_rate": self.scrap_rate,
+                "tooling_cost_eur": self.tooling_cost_eur,
+                "tool_life_shots": self.tool_life_shots,
+                "overhead_rate": self.overhead_rate,
+            }
+        )
+
         positive = {
             "annual_volume": self.annual_volume,
             "part_weight_kg": self.part_weight_kg,
@@ -97,6 +125,22 @@ class InjectionMoldingBaseProcessInput:
     currency: str = "EUR"
 
     def validate(self) -> None:
+        _validate_finite_numeric_inputs(
+            {
+                "part_weight_kg": self.part_weight_kg,
+                "material_price_eur_kg": self.material_price_eur_kg,
+                "material_utilization": self.material_utilization,
+                "cycle_time_s": self.cycle_time_s,
+                "cavities": self.cavities,
+                "machine_rate_eur_h": self.machine_rate_eur_h,
+                "oee": self.oee,
+                "labour_rate_eur_h": self.labour_rate_eur_h,
+                "operators": self.operators,
+                "scrap_rate": self.scrap_rate,
+                "overhead_rate": self.overhead_rate,
+            }
+        )
+
         positive = {
             "part_weight_kg": self.part_weight_kg,
             "material_price_eur_kg": self.material_price_eur_kg,

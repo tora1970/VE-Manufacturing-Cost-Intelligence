@@ -214,3 +214,121 @@ def test_invalid_rates_rejected(field, value):
 def test_negative_cost_inputs_rejected(field):
     with pytest.raises(ValueError):
         valid_input(**{field: -1}).validate()
+
+
+_LEGACY_NUMERIC_FIELDS = (
+    "annual_volume",
+    "part_weight_kg",
+    "material_price_eur_kg",
+    "material_utilization",
+    "cycle_time_s",
+    "cavities",
+    "machine_rate_eur_h",
+    "oee",
+    "labour_rate_eur_h",
+    "operators",
+    "scrap_rate",
+    "tooling_cost_eur",
+    "tool_life_shots",
+    "overhead_rate",
+)
+_BASE_PROCESS_NUMERIC_FIELDS = (
+    "part_weight_kg",
+    "material_price_eur_kg",
+    "material_utilization",
+    "cycle_time_s",
+    "cavities",
+    "machine_rate_eur_h",
+    "oee",
+    "labour_rate_eur_h",
+    "operators",
+    "scrap_rate",
+    "overhead_rate",
+)
+
+
+@pytest.mark.parametrize(
+    "input_factory,field",
+    [
+        (valid_input, field)
+        for field in _LEGACY_NUMERIC_FIELDS
+    ]
+    + [
+        (base_process_input, field)
+        for field in _BASE_PROCESS_NUMERIC_FIELDS
+    ],
+)
+@pytest.mark.parametrize(
+    "value",
+    [
+        pytest.param(float("nan"), id="nan"),
+        pytest.param(float("inf"), id="positive-infinity"),
+        pytest.param(float("-inf"), id="negative-infinity"),
+    ],
+)
+def test_non_finite_numeric_inputs_are_rejected(input_factory, field, value):
+    with pytest.raises(ValueError, match=field):
+        input_factory(**{field: value}).validate()
+
+
+@pytest.mark.parametrize(
+    "input_factory,field,value",
+    [
+        (valid_input, "annual_volume", 25000),
+        (valid_input, "part_weight_kg", 0.1),
+        (valid_input, "material_price_eur_kg", 3.0),
+        (valid_input, "material_utilization", 0.9),
+        (valid_input, "cycle_time_s", 30),
+        (valid_input, "cavities", 2),
+        (valid_input, "machine_rate_eur_h", 75),
+        (valid_input, "oee", 0.8),
+        (valid_input, "labour_rate_eur_h", 18),
+        (valid_input, "operators", 0.5),
+        (valid_input, "scrap_rate", 0.02),
+        (valid_input, "tooling_cost_eur", 80000),
+        (valid_input, "tool_life_shots", 500000),
+        (valid_input, "overhead_rate", 0.1),
+        (base_process_input, "part_weight_kg", 0.1),
+        (base_process_input, "material_price_eur_kg", 3.0),
+        (base_process_input, "material_utilization", 0.9),
+        (base_process_input, "cycle_time_s", 30),
+        (base_process_input, "cavities", 2),
+        (base_process_input, "machine_rate_eur_h", 75),
+        (base_process_input, "oee", 0.8),
+        (base_process_input, "labour_rate_eur_h", 18),
+        (base_process_input, "operators", 0.5),
+        (base_process_input, "scrap_rate", 0.02),
+        (base_process_input, "overhead_rate", 0.1),
+    ],
+)
+def test_finite_numeric_inputs_remain_accepted(input_factory, field, value):
+    input_factory(**{field: value}).validate()
+
+
+@pytest.mark.parametrize("input_factory", [valid_input, base_process_input])
+def test_existing_numeric_boundaries_are_preserved(input_factory):
+    input_factory(
+        material_utilization=1,
+        oee=1,
+        operators=0,
+        scrap_rate=0,
+        overhead_rate=0,
+    ).validate()
+    input_factory(
+        material_utilization=1,
+        oee=1,
+        operators=0,
+        scrap_rate=0.999,
+        overhead_rate=0.999,
+    ).validate()
+
+    for field in ("material_utilization", "oee", "machine_rate_eur_h"):
+        with pytest.raises(ValueError):
+            input_factory(**{field: 0}).validate()
+
+    for field in ("scrap_rate", "overhead_rate"):
+        with pytest.raises(ValueError):
+            input_factory(**{field: 1}).validate()
+
+    if input_factory is valid_input:
+        valid_input(tooling_cost_eur=0).validate()
