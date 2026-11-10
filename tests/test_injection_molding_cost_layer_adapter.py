@@ -3,7 +3,11 @@ import math
 
 import pytest
 
-from models.injection_molding import InjectionMoldingInput, InjectionMoldingModel
+from models.injection_molding import (
+    InjectionMoldingBaseProcessInput,
+    InjectionMoldingInput,
+    InjectionMoldingModel,
+)
 from models.manufacturing_cost_layers import ManufacturingCostBreakdown
 from services.injection_molding_cost_layer_adapter import (
     adapt_injection_molding_cost_layers,
@@ -35,6 +39,27 @@ def valid_input(**overrides):
     return InjectionMoldingInput(**values)
 
 
+def base_process_input(data=None, **overrides):
+    values = {
+        "part_weight_kg": 0.1,
+        "material_price_eur_kg": 3.0,
+        "material_utilization": 0.90,
+        "cycle_time_s": 30,
+        "cavities": 2,
+        "machine_rate_eur_h": 75,
+        "oee": 0.80,
+        "labour_rate_eur_h": 18,
+        "operators": 0.5,
+        "scrap_rate": 0.02,
+        "overhead_rate": 0.10,
+        "currency": "EUR",
+    }
+    if data is not None:
+        values = {name: getattr(data, name) for name in values}
+    values.update(overrides)
+    return InjectionMoldingBaseProcessInput(**values)
+
+
 def fallback_process_scrap(data, legacy):
     return calculate_process_scrap(
         ProcessScrapInput(
@@ -58,6 +83,69 @@ def test_valid_input_and_result_can_be_adapted():
     assert adapted.material.base_material_cost == expected_scrap.material_cost_per_good_part
     assert adapted.process.machine_cost == expected_scrap.machine_cost_per_good_part
     assert adapted.secondary_processes.total_secondary_process_cost == 0.0
+
+
+def test_base_process_result_can_be_adapted_without_tooling_inputs():
+    data = base_process_input(scrap_rate=0.10, overhead_rate=0.40)
+    result = InjectionMoldingModel().calculate_base_process(data)
+
+    adapted = adapt_injection_molding_cost_layers(data, result)
+
+    assert adapted.material.base_material_cost > 0
+    assert adapted.process.machine_cost > 0
+    assert adapted.process.labour_cost > 0
+    assert adapted.process.process_scrap_cost == 0.0
+    assert adapted.process.production_overhead_cost == pytest.approx(
+        (
+            adapted.process.machine_cost
+            + adapted.process.labour_cost
+            + adapted.process.setup_cost
+        )
+        * data.overhead_rate
+    )
+
+
+def test_legacy_and_base_process_adapter_paths_are_equivalent():
+    legacy_data = valid_input(scrap_rate=0.10, overhead_rate=0.40)
+    base_data = base_process_input(legacy_data)
+    model = InjectionMoldingModel()
+
+    legacy_layers = adapt_injection_molding_cost_layers(
+        legacy_data, model.calculate(legacy_data)
+    )
+    base_layers = adapt_injection_molding_cost_layers(
+        base_data, model.calculate_base_process(base_data)
+    )
+
+    assert base_layers == legacy_layers
+
+
+@pytest.mark.parametrize("base_process", [False, True])
+def test_adapter_accepts_matching_input_result_pairings(base_process):
+    if base_process:
+        data = base_process_input()
+        result = InjectionMoldingModel().calculate_base_process(data)
+    else:
+        data = valid_input()
+        result = InjectionMoldingModel().calculate(data)
+
+    adapted = adapt_injection_molding_cost_layers(data, result)
+
+    assert isinstance(adapted, ManufacturingCostBreakdown)
+
+
+@pytest.mark.parametrize("base_process_input_mismatch", [False, True])
+def test_adapter_rejects_mixed_input_result_pairings(base_process_input_mismatch):
+    model = InjectionMoldingModel()
+    if base_process_input_mismatch:
+        data = base_process_input()
+        result = model.calculate(valid_input())
+    else:
+        data = valid_input()
+        result = model.calculate_base_process(base_process_input(data))
+
+    with pytest.raises(TypeError, match="matching Injection Molding"):
+        adapt_injection_molding_cost_layers(data, result)
 
 
 def test_material_mapping_is_legacy_pure_and_no_material_overhead_is_added():
@@ -901,7 +989,10 @@ def test_tooling_and_legacy_uplifts_do_not_affect_fallback_layers():
         tooling_cost_eur=0.0, scrap_rate=0.10, overhead_rate=0.40
     )
     data_with_tooling = valid_input(
-        tooling_cost_eur=100000.0, scrap_rate=0.10, overhead_rate=0.40
+        tooling_cost_eur=100000.0,
+        tool_life_shots=250000,
+        scrap_rate=0.10,
+        overhead_rate=0.40,
     )
     model = InjectionMoldingModel()
     legacy_without_tooling = model.calculate(data_without_tooling)

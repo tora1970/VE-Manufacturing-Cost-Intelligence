@@ -9,7 +9,12 @@ Existing tooling_cost remains deliberately excluded because tooling is treated a
 project CAPEX / project cost rather than manufacturing should-cost.
 """
 
-from models.injection_molding import InjectionMoldingCostBreakdown, InjectionMoldingInput
+from models.injection_molding import (
+    InjectionMoldingBaseProcessInput,
+    InjectionMoldingBaseProcessResult,
+    InjectionMoldingCostBreakdown,
+    InjectionMoldingInput,
+)
 from models.manufacturing_cost_layers import (
     ManufacturingCostBreakdown,
     MaterialCostLayer,
@@ -38,8 +43,8 @@ def legacy_excluded_tooling_cost(result: InjectionMoldingCostBreakdown) -> float
 
 
 def adapt_injection_molding_cost_layers(
-    data: InjectionMoldingInput,
-    result: InjectionMoldingCostBreakdown,
+    data: InjectionMoldingInput | InjectionMoldingBaseProcessInput,
+    result: InjectionMoldingCostBreakdown | InjectionMoldingBaseProcessResult,
     *,
     setup: SetupCostInput | SetupCostResult | None = None,
     process_scrap: ProcessScrapInput | ProcessScrapResult | None = None,
@@ -49,6 +54,28 @@ def adapt_injection_molding_cost_layers(
     Legacy tooling and overhead are excluded; production overhead is calculated
     from machine, labour, and setup costs only.
     """
+    if not isinstance(data, (InjectionMoldingInput, InjectionMoldingBaseProcessInput)):
+        raise TypeError(
+            "data must be an InjectionMoldingInput or "
+            "InjectionMoldingBaseProcessInput."
+        )
+    if not isinstance(
+        result, (InjectionMoldingCostBreakdown, InjectionMoldingBaseProcessResult)
+    ):
+        raise TypeError(
+            "result must be an InjectionMoldingCostBreakdown or "
+            "InjectionMoldingBaseProcessResult."
+        )
+    if not (
+        isinstance(data, InjectionMoldingInput)
+        and isinstance(result, InjectionMoldingCostBreakdown)
+        or isinstance(data, InjectionMoldingBaseProcessInput)
+        and isinstance(result, InjectionMoldingBaseProcessResult)
+    ):
+        raise TypeError(
+            "data and result must be a matching Injection Molding input/result pair."
+        )
+
     if data.currency != "EUR":
         raise ValueError("InjectionMoldingInput currency must be 'EUR'.")
     if result.currency != "EUR":
@@ -72,13 +99,22 @@ def adapt_injection_molding_cost_layers(
         if result.currency != resolved_setup.currency:
             raise ValueError("Result and setup currency labels must match.")
 
+    if isinstance(result, InjectionMoldingCostBreakdown):
+        material_cost_per_attempt = result.material_cost
+        machine_cost_per_attempt = result.machine_cost
+        labour_cost_per_attempt = result.labour_cost
+    else:
+        material_cost_per_attempt = result.material_cost_per_attempt
+        machine_cost_per_attempt = result.machine_cost_per_attempt
+        labour_cost_per_attempt = result.labour_cost_per_attempt
+
     if process_scrap is None:
         resolved_scarp = calculate_process_scrap(
             ProcessScrapInput(
                 process_scrap_rate=data.scrap_rate,
-                material_cost_per_attempt=result.material_cost,
-                machine_cost_per_attempt=result.machine_cost,
-                labour_cost_per_attempt=result.labour_cost,
+                material_cost_per_attempt=material_cost_per_attempt,
+                machine_cost_per_attempt=machine_cost_per_attempt,
+                labour_cost_per_attempt=labour_cost_per_attempt,
                 currency=data.currency,
             )
         )

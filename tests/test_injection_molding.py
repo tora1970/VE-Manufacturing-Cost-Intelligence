@@ -1,6 +1,10 @@
 import pytest
 
-from models.injection_molding import InjectionMoldingInput, InjectionMoldingModel
+from models.injection_molding import (
+    InjectionMoldingBaseProcessInput,
+    InjectionMoldingInput,
+    InjectionMoldingModel,
+)
 from services.cost_engine import CostEngine
 
 
@@ -25,8 +29,50 @@ def valid_input(**overrides):
     return InjectionMoldingInput(**values)
 
 
+def base_process_input(**overrides):
+    values = dict(
+        part_weight_kg=0.1,
+        material_price_eur_kg=3.0,
+        material_utilization=0.90,
+        cycle_time_s=30,
+        cavities=2,
+        machine_rate_eur_h=75,
+        oee=0.80,
+        labour_rate_eur_h=18,
+        operators=0.5,
+        scrap_rate=0.02,
+        overhead_rate=0.10,
+        currency="EUR",
+    )
+    values.update(overrides)
+    return InjectionMoldingBaseProcessInput(**values)
+
+
 def test_valid_input_is_accepted():
     valid_input().validate()
+
+
+def test_base_process_input_validates_without_tooling_fields():
+    data = base_process_input()
+
+    data.validate()
+    result = InjectionMoldingModel().calculate_base_process(data)
+
+    assert result.currency == data.currency
+    assert not hasattr(data, "tooling_cost_eur")
+    assert not hasattr(data, "tool_life_shots")
+
+
+def test_base_process_attempt_costs_match_legacy_result():
+    legacy_data = valid_input()
+    base_data = base_process_input()
+
+    legacy_result = InjectionMoldingModel().calculate(legacy_data)
+    base_result = InjectionMoldingModel().calculate_base_process(base_data)
+
+    assert base_result.material_cost_per_attempt == legacy_result.material_cost
+    assert base_result.machine_cost_per_attempt == legacy_result.machine_cost
+    assert base_result.labour_cost_per_attempt == legacy_result.labour_cost
 
 
 def test_valid_input_has_deterministic_cost_breakdown():
