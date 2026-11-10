@@ -72,8 +72,17 @@ def adapt_injection_molding_cost_layers(
         if result.currency != resolved_setup.currency:
             raise ValueError("Result and setup currency labels must match.")
 
-    resolved_scarp = None
-    if process_scrap is not None:
+    if process_scrap is None:
+        resolved_scarp = calculate_process_scrap(
+            ProcessScrapInput(
+                process_scrap_rate=data.scrap_rate,
+                material_cost_per_attempt=result.material_cost,
+                machine_cost_per_attempt=result.machine_cost,
+                labour_cost_per_attempt=result.labour_cost,
+                currency=data.currency,
+            )
+        )
+    else:
         if isinstance(process_scrap, ProcessScrapInput):
             resolved_scarp = calculate_process_scrap(process_scrap)
         elif isinstance(process_scrap, ProcessScrapResult):
@@ -90,24 +99,14 @@ def adapt_injection_molding_cost_layers(
 
     process_setup_cost = resolved_setup.setup_cost_per_part if resolved_setup is not None else 0.0
 
-    if resolved_scarp is not None:
-        material = MaterialCostLayer(
-            base_material_cost=resolved_scarp.material_cost_per_good_part,
-            material_loss_cost=0.0,
-            material_overhead_cost=0.0,
-        )
-        machine_cost = resolved_scarp.machine_cost_per_good_part
-        labour_cost = resolved_scarp.labour_cost_per_good_part
-        process_scrap_cost = 0.0
-    else:
-        material = MaterialCostLayer(
-            base_material_cost=result.material_cost,
-            material_loss_cost=0.0,
-            material_overhead_cost=0.0,
-        )
-        machine_cost = result.machine_cost
-        labour_cost = result.labour_cost
-        process_scrap_cost = result.scrap_cost
+    material = MaterialCostLayer(
+        base_material_cost=resolved_scarp.material_cost_per_good_part,
+        material_loss_cost=0.0,
+        material_overhead_cost=0.0,
+    )
+    machine_cost = resolved_scarp.machine_cost_per_good_part
+    labour_cost = resolved_scarp.labour_cost_per_good_part
+    process_scrap_cost = 0.0
 
     production_overhead = calculate_production_overhead(
         ProductionOverheadInput(
