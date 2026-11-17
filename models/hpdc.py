@@ -33,6 +33,25 @@ def calculate_cavity_layout(
     )
 
 
+def calculate_total_shot_weight_kg(
+    net_part_weight_kg: float,
+    number_of_cavities: int,
+    metal_yield: float,
+) -> float:
+    if isinstance(number_of_cavities, bool) or not isinstance(number_of_cavities, int):
+        raise ValueError("number_of_cavities must be an integer greater than or equal to 1.")
+    if number_of_cavities < 1:
+        raise ValueError("number_of_cavities must be an integer greater than or equal to 1.")
+    if not math.isfinite(net_part_weight_kg) or net_part_weight_kg <= 0:
+        raise ValueError("net_part_weight_kg must be finite and greater than zero.")
+    if not math.isfinite(metal_yield) or not 0 < metal_yield <= 1:
+        raise ValueError("metal_yield must be greater than 0 and less than or equal to 1.")
+    total_shot_weight = net_part_weight_kg * number_of_cavities / metal_yield
+    if not math.isfinite(total_shot_weight):
+        raise ValueError("total shot weight must be finite.")
+    return total_shot_weight
+
+
 @dataclass(frozen=True)
 class HPDCInput:
     annual_volume: int
@@ -73,6 +92,8 @@ class HPDCInput:
     selected_machine_max_part_size: str | None = None
     selected_machine_max_part_weight_kg: float | None = None
     limiting_constraint: str | None = None
+    nominal_wall_thickness_mm: float | None = None
+    cycle_time_prediction_method: str | None = None
 
     @property
     def effective_cavities(self) -> int:
@@ -274,7 +295,11 @@ class HPDCModel:
             data.tool_layout_width_mm,
         )
         net_part_weight_per_shot = net_part_weight * cavities
-        total_shot_weight = net_part_weight_per_shot / metal_yield
+        total_shot_weight = calculate_total_shot_weight_kg(
+            net_part_weight,
+            cavities,
+            metal_yield,
+        )
         shots_per_hour = 3600 / cycle_time
         gross_parts_per_hour = shots_per_hour * cavities
         good_parts_per_shot = cavities * process_yield
@@ -306,7 +331,7 @@ class HPDCModel:
 
         cycle_time_deviation = None
         cycle_time_warning = None
-        cycle_time_source = "Predicted"
+        cycle_time_source = data.cycle_time_prediction_method or "Predicted"
         if data.cycle_time_override_s is not None:
             cycle_time_source = "User Override"
             cycle_time_deviation = (

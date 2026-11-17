@@ -6,8 +6,19 @@ from dataclasses import asdict
 import pandas as pd
 import streamlit as st
 
-from models.hpdc import HPDCInput, HPDCModel, calculate_cavity_layout
+from models.hpdc import (
+    HPDCInput,
+    HPDCModel,
+    calculate_cavity_layout,
+    calculate_total_shot_weight_kg,
+)
 from services.cost_engine import CostEngine
+from services.hpdc_cycle_time import (
+    HPDCCycleTimeCalculator,
+    HPDCCycleTimeError,
+    HPDCCycleTimeInput,
+    HPDCCycleTimeParameters,
+)
 from services.machine_rate_resolution import resolve_hpdc_machine
 from services.masterdata_service import MasterDataError, MasterDataService, find_column
 from services.result_store import ResultStore
@@ -87,8 +98,8 @@ def render_hpdc_agent(service: MasterDataService, settings: dict) -> None:
         f"machine -> {masterdata_paths['machine']}"
     )
     st.caption(
-        "Predicted cycle time currently uses the configured HPDC baseline; "
-        "this project does not yet include a cycle-time prediction equation."
+        "Engineering Estimate V1 uses configured engineering assumptions. "
+        "It is not a casting simulation or a measured machine cycle."
     )
 
     try:
@@ -105,6 +116,28 @@ def render_hpdc_agent(service: MasterDataService, settings: dict) -> None:
         return
     if machine_data.empty:
         st.error("HPDC machine masterdata contains no machine rows.")
+        return
+
+    try:
+        cycle_time_parameters = HPDCCycleTimeParameters.from_mapping(
+            settings.get("hpdc_cycle_time_v1")
+        )
+        cycle_time_calculator = HPDCCycleTimeCalculator(cycle_time_parameters)
+        default_shot_weight = calculate_total_shot_weight_kg(
+            float(defaults["part_weight_kg"]),
+            defaults["cavities"],
+            float(defaults["casting_yield"]),
+        )
+        default_cycle_time_estimate = cycle_time_calculator.calculate(
+            HPDCCycleTimeInput(
+                total_shot_weight_kg=default_shot_weight,
+                nominal_wall_thickness_mm=(
+                    cycle_time_parameters.nominal_wall_thickness_default_mm
+                ),
+            )
+        )
+    except (KeyError, HPDCCycleTimeError, ValueError) as exc:
+        st.error(f"HPDC cycle-time configuration or defaults are invalid: {exc}")
         return
 
     with st.form("hpdc_input_form"):
@@ -164,6 +197,18 @@ def render_hpdc_agent(service: MasterDataService, settings: dict) -> None:
             part_height = st.number_input(
                 "Part Height [mm]", min_value=0.0, value=0.0, step=1.0
             )
+            nominal_wall_thickness = st.number_input(
+                "Nominal Wall Thickness [mm]",
+                min_value=cycle_time_parameters.nominal_wall_thickness_min_mm,
+                max_value=cycle_time_parameters.nominal_wall_thickness_max_mm,
+                value=cycle_time_parameters.nominal_wall_thickness_default_mm,
+                step=0.1,
+                format="%.1f",
+                help=(
+                    "User engineering input. It is not inferred from part "
+                    "length, width, height, weight, or density."
+                ),
+            )
             metal_yield = st.number_input(
                 "Metal Yield [%]",
                 min_value=1.0,
@@ -176,8 +221,12 @@ def render_hpdc_agent(service: MasterDataService, settings: dict) -> None:
                 st.number_input(
                     "Cycle Time Override [s]",
                     min_value=0.1,
-                    value=float(defaults["cycle_time_s"]),
+                    value=default_cycle_time_estimate.predicted_cycle_time_s,
                     step=1.0,
+                    help=(
+                        "Prefilled with the estimate from configured default "
+                        "production inputs."
+                    ),
                 )
                 if override_cycle_time
                 else None
@@ -247,9 +296,18 @@ def render_hpdc_agent(service: MasterDataService, settings: dict) -> None:
             float(part_width),
             layout_factor,
         )
-        net_weight_per_shot = float(net_part_weight) * cavities
-        total_shot_weight = net_weight_per_shot / (float(metal_yield) / 100)
-        cycle_time_predicted = float(defaults["cycle_time_s"])
+        total_shot_weight = calculate_total_shot_weight_kg(
+            float(net_part_weight),
+            cavities,
+            float(metal_yield) / 100,
+        )
+        cycle_time_estimate = cycle_time_calculator.calculate(
+            HPDCCycleTimeInput(
+                total_shot_weight_kg=total_shot_weight,
+                nominal_wall_thickness_mm=float(nominal_wall_thickness),
+            )
+        )
+        cycle_time_predicted = cycle_time_estimate.predicted_cycle_time_s
         machine = resolve_hpdc_machine(
             machine_data,
             layout_length,
@@ -294,6 +352,8 @@ def render_hpdc_agent(service: MasterDataService, settings: dict) -> None:
             machine_selection_reason=machine.selection_reason,
             selected_machine_max_part_size=machine.max_part_size,
             selected_machine_max_part_weight_kg=machine.max_part_weight_kg,
+            nominal_wall_thickness_mm=float(nominal_wall_thickness),
+            cycle_time_prediction_method=cycle_time_estimate.prediction_method,
         )
         result = CostEngine().calculate(HPDCModel(), data)
     except Exception as exc:
@@ -302,6 +362,59 @@ def render_hpdc_agent(service: MasterDataService, settings: dict) -> None:
 
     if result.cycle_time_warning:
         st.warning(result.cycle_time_warning)
+
+    st.subheader("Cycle Time Estimate")
+    st.metric(
+        "Nominal Wall Thickness",
+        f"{cycle_time_estimate.nominal_wall_thickness_mm:.1f} mm",
+    )
+    st.caption(f"Prediction basis: {cycle_time_estimate.prediction_method}")
+    st.caption(
+        "The estimate uses configured engineering assumptions. It is not a "
+        "casting simulation or measured machine cycle."
+    )
+    st.caption(
+        "Hold and cooling overlap while the die is closed; the cycle uses "
+        "the longer duration, not their sum."
+    )
+    st.dataframe(
+        pd.DataFrame(
+            [
+                ("Die close", f"{cycle_time_estimate.die_close_time_s:.1f} s"),
+                ("Fill", f"{cycle_time_estimate.fill_time_s:.1f} s"),
+                (
+                    "Intensification / hold",
+                    f"{cycle_time_estimate.hold_time_s:.1f} s",
+                ),
+                (
+                    "Solidification / cooling",
+                    f"{cycle_time_estimate.cooling_time_s:.1f} s",
+                ),
+                (
+                    "Closed phase (max)",
+                    f"{cycle_time_estimate.closed_phase_time_s:.1f} s",
+                ),
+                ("Die open", f"{cycle_time_estimate.die_open_time_s:.1f} s"),
+                ("Ejection", f"{cycle_time_estimate.ejection_time_s:.1f} s"),
+                (
+                    "Spray / handling",
+                    f"{cycle_time_estimate.spray_handling_time_s:.1f} s",
+                ),
+                (
+                    "Predicted cycle time",
+                    f"{cycle_time_estimate.predicted_cycle_time_s:.1f} s",
+                ),
+            ],
+            columns=["Cycle Phase", "Time"],
+        ),
+        hide_index=True,
+        use_container_width=True,
+    )
+    with st.expander("V1 assumption details"):
+        for note in cycle_time_estimate.assumption_notes:
+            st.write(note)
+        for warning in cycle_time_estimate.warnings:
+            st.warning(warning)
 
     one, two, three = st.columns(3)
     one.metric("Total Should-cost", f"{result.total_cost:,.2f} {currency}/pc")
@@ -317,6 +430,14 @@ def render_hpdc_agent(service: MasterDataService, settings: dict) -> None:
                 ("Cycle Time Override [s]", result.cycle_time_override_s),
                 ("Effective Cycle Time [s]", result.cycle_time_effective_s),
                 ("Cycle Time Source", result.cycle_time_source),
+                (
+                    "Cycle Time Deviation [%]",
+                    (
+                        f"{result.cycle_time_deviation_percent:.1f}%"
+                        if result.cycle_time_deviation_percent is not None
+                        else "Not overridden"
+                    ),
+                ),
                 ("Selected Machine Size", result.selected_machine_size),
                 ("Machine Rate [EUR/h]", result.machine_rate_eur_hr),
                 ("Required Cavity Layout [mm]", f"{result.required_layout_length_mm:g} x {result.required_layout_width_mm:g}"),
@@ -351,7 +472,11 @@ def render_hpdc_agent(service: MasterDataService, settings: dict) -> None:
     st.bar_chart(chart)
     st.dataframe(chart, use_container_width=True)
 
-    payload = {"inputs": asdict(data), "result": result.to_dict()}
+    payload = {
+        "inputs": asdict(data),
+        "result": result.to_dict(),
+        "cycle_time_estimate": asdict(cycle_time_estimate),
+    }
     left, right = st.columns(2)
     with left:
         st.download_button(
