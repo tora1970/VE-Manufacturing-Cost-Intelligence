@@ -261,7 +261,7 @@ def render_hpdc_agent(service: MasterDataService, settings: dict) -> None:
                 step=1000,
             )
             overhead_rate = st.number_input(
-                "Overhead on Direct Cost [%]",
+                "Production Overhead [%]",
                 min_value=0.0,
                 max_value=99.0,
                 value=float(defaults["overhead_rate"]) * 100,
@@ -417,10 +417,19 @@ def render_hpdc_agent(service: MasterDataService, settings: dict) -> None:
             st.warning(warning)
 
     one, two, three = st.columns(3)
-    one.metric("Total Should-cost", f"{result.total_cost:,.2f} {currency}/pc")
-    two.metric("Annual Cost", f"{result.annual_cost:,.0f} {currency}")
+    one.metric(
+        "Recurring Manufacturing Should Cost",
+        f"{result.recurring_manufacturing_should_cost:,.2f} {currency}/pc",
+    )
+    two.metric(
+        "Annual Recurring Manufacturing Cost",
+        f"{result.annual_recurring_manufacturing_cost:,.0f} {currency}",
+    )
     two.caption(f"Based on {data.annual_volume:,} good parts/year")
-    three.metric("Machine Cost per Good Part", f"{result.machine_cost_per_good_part:,.4f} {currency}")
+    three.metric(
+        "Machine Cost per Good Part",
+        f"{result.machine_cost_per_good_part:,.4f} {currency}",
+    )
 
     st.subheader("Resolved Production Inputs")
     st.dataframe(
@@ -440,13 +449,46 @@ def render_hpdc_agent(service: MasterDataService, settings: dict) -> None:
                 ),
                 ("Selected Machine Size", result.selected_machine_size),
                 ("Machine Rate [EUR/h]", result.machine_rate_eur_hr),
-                ("Required Cavity Layout [mm]", f"{result.required_layout_length_mm:g} x {result.required_layout_width_mm:g}"),
+                (
+                    "Required Cavity Layout [mm]",
+                    f"{result.required_layout_length_mm:g} x "
+                    f"{result.required_layout_width_mm:g}",
+                ),
                 ("Total Shot Weight [kg]", result.total_shot_weight_kg),
+                ("Process Scrap [%]", data.effective_process_scrap_rate * 100),
+                ("Process Yield [%]", result.process_yield * 100),
                 ("Shots per Hour", result.shots_per_hour),
                 ("Gross Parts per Hour", result.gross_parts_per_hour),
                 ("Good Parts per Hour", result.good_parts_per_hour),
                 ("Required Machine Hours per Year", result.machine_hours_year),
-                ("Machine Cost per Good Part", result.machine_cost_per_good_part),
+                (
+                    "Material Cost per Gross Part [EUR]",
+                    result.material_cost_per_gross_part,
+                ),
+                (
+                    "Material Cost per Good Part [EUR]",
+                    result.material_cost_per_good_part,
+                ),
+                (
+                    "Machine Cost per Gross Part [EUR]",
+                    result.machine_cost_per_gross_part,
+                ),
+                (
+                    "Machine Cost per Good Part [EUR]",
+                    result.machine_cost_per_good_part,
+                ),
+                (
+                    "Labour Cost per Gross Part [EUR]",
+                    result.labour_cost_per_gross_part,
+                ),
+                (
+                    "Labour Cost per Good Part [EUR]",
+                    result.labour_cost_per_good_part,
+                ),
+                (
+                    "Overhead Base per Good Part [EUR]",
+                    result.overhead_base_per_good_part,
+                ),
             ],
             columns=["Resolved Field", "Value"],
         ),
@@ -457,20 +499,33 @@ def render_hpdc_agent(service: MasterDataService, settings: dict) -> None:
 
     chart = pd.DataFrame(
         {
-            "Cost element": ["Material", "Machine", "Labour", "Tooling", "Scrap", "Overhead"],
+            "Cost element": ["Material", "Machine", "Labour", "Overhead"],
             f"{currency}/pc": [
                 result.material_cost,
                 result.machine_cost,
                 result.labour_cost,
-                result.tooling_cost,
-                result.scrap_cost,
                 result.overhead_cost,
             ],
         }
     ).set_index("Cost element")
-    st.subheader("Cost Breakdown")
+    st.subheader("Recurring Manufacturing Cost Breakdown")
     st.bar_chart(chart)
     st.dataframe(chart, use_container_width=True)
+
+    st.subheader("Tooling / Project CAPEX")
+    st.dataframe(
+        pd.DataFrame(
+            [
+                ("Tooling Investment [EUR]", result.tooling_investment_eur),
+                ("Tool Life [shots]", result.tool_life_shots),
+                ("Number of Cavities", result.number_of_cavities),
+                ("Tool Life [gross parts]", result.tool_life_gross_parts),
+            ],
+            columns=["Project Cost Input", "Value"],
+        ),
+        hide_index=True,
+        use_container_width=True,
+    )
 
     payload = {
         "inputs": asdict(data),

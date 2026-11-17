@@ -50,6 +50,13 @@ fixed cycle-time default. Estimated cavity layout dimensions use the
 configurable `hpdc_defaults.layout_factor` (default `1.25`) and are not
 validated die-design dimensions.
 
+HPDC recurring manufacturing cost is reported per good part as material,
+machine, labour, and production overhead. Material, machine, and labour costs
+are normalized for process yield exactly once; metal yield remains a separate
+material-weight adjustment. Overhead is applied to good-part machine and labour
+costs only. Tooling investment and tool life are reported separately as project
+CAPEX, with gross tool life calculated as shots multiplied by cavities.
+
 ## 3. Public or private masterdata
 
 For a public repository, keep:

@@ -229,12 +229,26 @@ class CostBreakdown:
     material_cost: float
     machine_cost: float
     labour_cost: float
-    tooling_cost: float
-    scrap_cost: float
+    tooling_cost: float  # Deprecated compatibility field; always zero.
+    scrap_cost: float  # Deprecated compatibility field; always zero.
     overhead_cost: float
     total_cost: float
     annual_cost: float
     currency: str
+    process_yield: float
+    material_cost_per_gross_part: float
+    material_cost_per_good_part: float
+    machine_cost_per_gross_part: float
+    machine_cost_per_good_part: float
+    labour_cost_per_gross_part: float
+    labour_cost_per_good_part: float
+    overhead_base_per_good_part: float
+    recurring_manufacturing_should_cost: float
+    annual_recurring_manufacturing_cost: float
+    tooling_investment_eur: float
+    tool_life_shots: int
+    number_of_cavities: int
+    tool_life_gross_parts: int
     selected_machine_process: str | None = None
     selected_machine_size: str | None = None
     machine_rate_eur_hr: float | None = None
@@ -260,16 +274,12 @@ class CostBreakdown:
     shots_per_hour: float | None = None
     gross_parts_per_shot: int | None = None
     gross_parts_per_hour: float | None = None
-    process_yield: float | None = None
     good_parts_per_shot: float | None = None
     good_parts_per_hour: float | None = None
     gross_parts_required_year: float | None = None
     rejected_parts_year: float | None = None
     required_shots_year: float | None = None
     machine_hours_year: float | None = None
-    machine_cost_per_gross_part: float | None = None
-    machine_cost_per_good_part: float | None = None
-
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
@@ -309,25 +319,33 @@ class HPDCModel:
         required_shots_year = gross_parts_required_year / cavities
         machine_hours_year = required_shots_year * cycle_time / 3600
 
-        machine_cost_per_gross_part = data.machine_rate_eur_h * cycle_time / (3600 * cavities)
+        machine_cost_per_gross_part = (
+            data.machine_rate_eur_h * cycle_time / (3600 * cavities)
+        )
         machine_cost_per_good_part = machine_cost_per_gross_part / process_yield
-        material_cost = net_part_weight / metal_yield * data.material_price_eur_kg
+        material_cost_per_gross_part = (
+            net_part_weight / metal_yield * data.material_price_eur_kg
+        )
+        material_cost_per_good_part = material_cost_per_gross_part / process_yield
         effective_cycle_h = cycle_time / 3600 / data.oee
-        labour_cost = effective_cycle_h * data.labour_rate_eur_h * data.operators / cavities
-        tooling_cost = data.tooling_cost_eur / (data.tool_life_shots * cavities)
-        scrap_cost = (material_cost + labour_cost + tooling_cost) * (
-            1 / process_yield - 1
+        labour_cost_per_gross_part = (
+            effective_cycle_h * data.labour_rate_eur_h * data.operators / cavities
         )
-        direct_cost = (
-            material_cost
+        labour_cost_per_good_part = labour_cost_per_gross_part / process_yield
+        overhead_base_per_good_part = (
+            machine_cost_per_good_part + labour_cost_per_good_part
+        )
+        overhead_cost = overhead_base_per_good_part * data.overhead_rate
+        recurring_manufacturing_should_cost = (
+            material_cost_per_good_part
             + machine_cost_per_good_part
-            + labour_cost
-            + tooling_cost
-            + scrap_cost
+            + labour_cost_per_good_part
+            + overhead_cost
         )
-        overhead_cost = direct_cost * data.overhead_rate
-        total_cost = direct_cost + overhead_cost
-        rounded_total_cost = round(total_cost, 4)
+        annual_recurring_manufacturing_cost = (
+            recurring_manufacturing_should_cost * data.annual_volume
+        )
+        rounded_total_cost = round(recurring_manufacturing_should_cost, 4)
 
         cycle_time_deviation = None
         cycle_time_warning = None
@@ -345,14 +363,14 @@ class HPDCModel:
                 )
 
         return CostBreakdown(
-            material_cost=round(material_cost, 4),
+            material_cost=round(material_cost_per_good_part, 4),
             machine_cost=round(machine_cost_per_good_part, 4),
-            labour_cost=round(labour_cost, 4),
-            tooling_cost=round(tooling_cost, 4),
-            scrap_cost=round(scrap_cost, 4),
+            labour_cost=round(labour_cost_per_good_part, 4),
+            tooling_cost=0.0,
+            scrap_cost=0.0,
             overhead_cost=round(overhead_cost, 4),
             total_cost=rounded_total_cost,
-            annual_cost=round(rounded_total_cost * data.annual_volume, 2),
+            annual_cost=round(annual_recurring_manufacturing_cost, 2),
             currency=data.currency,
             selected_machine_process=data.selected_machine_process,
             selected_machine_size=data.selected_machine_size,
@@ -386,6 +404,21 @@ class HPDCModel:
             rejected_parts_year=rejected_parts_year,
             required_shots_year=required_shots_year,
             machine_hours_year=machine_hours_year,
+            material_cost_per_gross_part=material_cost_per_gross_part,
+            material_cost_per_good_part=material_cost_per_good_part,
             machine_cost_per_gross_part=machine_cost_per_gross_part,
             machine_cost_per_good_part=machine_cost_per_good_part,
+            labour_cost_per_gross_part=labour_cost_per_gross_part,
+            labour_cost_per_good_part=labour_cost_per_good_part,
+            overhead_base_per_good_part=overhead_base_per_good_part,
+            recurring_manufacturing_should_cost=(
+                recurring_manufacturing_should_cost
+            ),
+            annual_recurring_manufacturing_cost=round(
+                annual_recurring_manufacturing_cost, 2
+            ),
+            tooling_investment_eur=data.tooling_cost_eur,
+            tool_life_shots=data.tool_life_shots,
+            number_of_cavities=cavities,
+            tool_life_gross_parts=data.tool_life_shots * cavities,
         )

@@ -25,7 +25,13 @@ def test_hpdc_calculation_is_positive():
     )
     result = HPDCModel().calculate(data)
     assert result.total_cost > 0
-    assert result.annual_cost == round(result.total_cost * data.annual_volume, 2)
+    assert result.total_cost == pytest.approx(
+        round(result.recurring_manufacturing_should_cost, 4)
+    )
+    assert result.annual_cost == round(
+        result.recurring_manufacturing_should_cost * data.annual_volume, 2
+    )
+    assert result.annual_recurring_manufacturing_cost == result.annual_cost
     assert result.total_cost >= result.material_cost
 
 
@@ -132,27 +138,188 @@ def test_cycle_time_warning_requires_more_than_25_percent_deviation():
     assert over_threshold.cycle_time_warning is not None
 
 
-def test_scrap_is_not_applied_to_machine_cost_twice():
+def test_process_scrap_is_applied_once_to_each_recurring_cost_component():
     result = HPDCModel().calculate(
         production_input(
             oee=1.0,
-            labour_rate_eur_h=0.0,
-            operators=0.0,
+            labour_rate_eur_h=18.0,
+            operators=0.5,
             tooling_cost_eur=0.0,
             process_scrap_rate=0.1,
             scrap_rate=0.1,
         )
     )
     material_gross_cost = 0.2 / 0.8 * 2.5
+    labour_gross_cost = 40 / 3600 * 18 * 0.5 / 2
     assert result.machine_cost_per_good_part == pytest.approx(
         85 * 40 / (3600 * 2 * 0.9)
     )
-    assert result.scrap_cost == pytest.approx(
-        material_gross_cost * (1 / 0.9 - 1), abs=0.00005
+    assert result.material_cost_per_gross_part == pytest.approx(material_gross_cost)
+    assert result.material_cost_per_good_part == pytest.approx(
+        material_gross_cost / 0.9
     )
-    assert result.total_cost == pytest.approx(
-        material_gross_cost + result.machine_cost_per_good_part + result.scrap_cost,
-        abs=0.0001,
+    assert result.labour_cost_per_gross_part == pytest.approx(labour_gross_cost)
+    assert result.labour_cost_per_good_part == pytest.approx(labour_gross_cost / 0.9)
+    assert result.process_yield == pytest.approx(0.9)
+    assert result.scrap_cost == 0.0
+    assert result.tooling_cost == 0.0
+    assert result.recurring_manufacturing_should_cost == pytest.approx(
+        result.material_cost_per_good_part
+        + result.machine_cost_per_good_part
+        + result.labour_cost_per_good_part
+        + result.overhead_cost
+    )
+
+
+def test_reference_case_separates_recurring_cost_from_tooling_capex():
+    result = HPDCModel().calculate(
+        production_input(
+            annual_volume=10000,
+            part_weight_kg=0.85,
+            net_part_weight_kg=0.85,
+            material_price_eur_kg=2.9,
+            metal_yield=0.65,
+            casting_yield=0.65,
+            cycle_time_s=31.57179487179487,
+            cycle_time_predicted_s=31.57179487179487,
+            cavities=1,
+            number_of_cavities=1,
+            machine_rate_eur_h=70,
+            oee=0.75,
+            labour_rate_eur_h=14.98,
+            operators=0.5,
+            tooling_cost_eur=120000,
+            tool_life_shots=150000,
+            process_scrap_rate=0.03,
+            scrap_rate=0.03,
+            overhead_rate=0.12,
+        )
+    )
+
+    assert result.material_cost_per_gross_part == pytest.approx(
+        3.792307692307692
+    )
+    assert result.material_cost_per_good_part == pytest.approx(
+        3.909595559080095
+    )
+    assert result.machine_cost_per_gross_part == pytest.approx(
+        0.6138960113960115
+    )
+    assert result.machine_cost_per_good_part == pytest.approx(
+        0.6328824859752695
+    )
+    assert result.labour_cost_per_gross_part == pytest.approx(
+        0.08758249762583097
+    )
+    assert result.labour_cost_per_good_part == pytest.approx(
+        0.09029123466580512
+    )
+    assert result.overhead_base_per_good_part == pytest.approx(
+        0.7231737206410747
+    )
+    assert result.overhead_cost == pytest.approx(0.08678084647692895, abs=0.00005)
+    assert result.recurring_manufacturing_should_cost == pytest.approx(
+        4.719550126198098
+    )
+    assert result.annual_recurring_manufacturing_cost == pytest.approx(
+        47195.50
+    )
+    assert result.tooling_investment_eur == 120000
+    assert result.tool_life_shots == 150000
+    assert result.number_of_cavities == 1
+    assert result.tool_life_gross_parts == 150000
+    assert result.tooling_cost == 0
+    assert result.scrap_cost == 0
+    serialized = result.to_dict()
+    assert serialized["tooling_cost"] == 0
+    assert serialized["scrap_cost"] == 0
+    assert serialized["tooling_investment_eur"] == 120000
+    assert serialized["tool_life_gross_parts"] == 150000
+
+
+def test_tooling_inputs_do_not_change_recurring_cost_or_overhead():
+    baseline = HPDCModel().calculate(production_input(tooling_cost_eur=0))
+    changed_capex = HPDCModel().calculate(
+        production_input(tooling_cost_eur=500000, tool_life_shots=250000)
+    )
+
+    assert changed_capex.recurring_manufacturing_should_cost == pytest.approx(
+        baseline.recurring_manufacturing_should_cost
+    )
+    assert changed_capex.annual_recurring_manufacturing_cost == pytest.approx(
+        baseline.annual_recurring_manufacturing_cost
+    )
+    assert changed_capex.overhead_cost == pytest.approx(baseline.overhead_cost)
+    assert changed_capex.scrap_cost == baseline.scrap_cost == 0
+    assert changed_capex.tooling_cost == baseline.tooling_cost == 0
+    assert changed_capex.tooling_investment_eur == 500000
+    assert changed_capex.tool_life_shots == 250000
+    assert changed_capex.tool_life_gross_parts == 500000
+
+
+def test_overhead_basis_excludes_material_tooling_and_scrap():
+    baseline = HPDCModel().calculate(production_input())
+    changed_excluded_costs = HPDCModel().calculate(
+        production_input(
+            material_price_eur_kg=100,
+            tooling_cost_eur=500000,
+            process_scrap_rate=0.03,
+            scrap_rate=0.03,
+        )
+    )
+
+    assert baseline.overhead_base_per_good_part == pytest.approx(
+        baseline.machine_cost_per_good_part
+        + baseline.labour_cost_per_good_part
+    )
+    assert changed_excluded_costs.overhead_base_per_good_part == pytest.approx(
+        baseline.overhead_base_per_good_part
+    )
+    assert changed_excluded_costs.overhead_cost == pytest.approx(
+        baseline.overhead_cost
+    )
+
+
+def test_increasing_process_scrap_increases_each_good_part_cost_once():
+    no_scrap = HPDCModel().calculate(
+        production_input(process_scrap_rate=0.0, scrap_rate=0.0)
+    )
+    with_scrap = HPDCModel().calculate(
+        production_input(process_scrap_rate=0.1, scrap_rate=0.1)
+    )
+
+    assert with_scrap.process_yield == pytest.approx(0.9)
+    assert with_scrap.material_cost_per_good_part == pytest.approx(
+        no_scrap.material_cost_per_good_part / 0.9
+    )
+    assert with_scrap.machine_cost_per_good_part == pytest.approx(
+        no_scrap.machine_cost_per_good_part / 0.9
+    )
+    assert with_scrap.labour_cost_per_good_part == pytest.approx(
+        no_scrap.labour_cost_per_good_part / 0.9
+    )
+    assert with_scrap.tooling_investment_eur == no_scrap.tooling_investment_eur
+    assert with_scrap.tool_life_gross_parts == no_scrap.tool_life_gross_parts
+    assert with_scrap.scrap_cost == 0
+
+
+def test_tool_life_gross_parts_and_machine_productivity_scale_with_cavities():
+    result = HPDCModel().calculate(
+        production_input(
+            cavities=4,
+            number_of_cavities=4,
+            tooling_cost_eur=120000,
+            tool_life_shots=150000,
+        )
+    )
+
+    assert result.tool_life_gross_parts == 600000
+    assert result.number_of_cavities == 4
+    assert result.gross_parts_per_hour == pytest.approx(
+        result.shots_per_hour * 4
+    )
+    assert result.machine_cost_per_good_part == pytest.approx(
+        85 * 40 / (3600 * 4 * (1 - 0.03))
     )
 
 
@@ -167,6 +334,10 @@ def test_metal_yield_and_process_scrap_are_separate():
     assert result.net_part_weight_per_shot_kg == pytest.approx(0.4)
     assert result.total_shot_weight_kg == pytest.approx(0.5)
     assert result.process_yield == pytest.approx(0.9)
+    assert result.material_cost_per_gross_part == pytest.approx(0.2 / 0.8 * 2.5)
+    assert result.material_cost_per_good_part == pytest.approx(
+        (0.2 / 0.8 * 2.5) / 0.9
+    )
 
 
 def test_hpdc_lookups_accept_central_masterdata_columns():
@@ -223,8 +394,12 @@ def test_hpdc_material_cost_uses_the_selected_masterdata_price():
     adc12 = HPDCModel().calculate(
         production_input(material_price_eur_kg=_material_price(service, "ADC12"))
     )
-    assert a380.material_cost == pytest.approx(0.2 / 0.8 * 2.9)
-    assert adc12.material_cost == pytest.approx(0.2 / 0.8 * 2.8)
+    assert a380.material_cost_per_good_part == pytest.approx(
+        (0.2 / 0.8 * 2.9) / 0.97
+    )
+    assert adc12.material_cost_per_good_part == pytest.approx(
+        (0.2 / 0.8 * 2.8) / 0.97
+    )
     assert a380.material_cost != adc12.material_cost
 
 
