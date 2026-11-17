@@ -19,19 +19,19 @@ cache:
   allow_stale_on_error: true
 
 masterdata:
-  materials: materials/Materials.xlsx
-  regions: regions/Regions.xlsx
-  technologies: technologies/Technologies.xlsx
-  technology_rules: technologies/Technology_Rules.xlsx
-  technology_cost_library: technologies/Technology_Cost_Library.xlsx
-  hpdc_machines: hpdc/Machines.xlsx
-  hpdc_parameters: hpdc/Parameters.xlsx
+  materials: Masterdata/Materials.xlsx
+  regions: Masterdata/Regions.xlsx
+  technologies: Masterdata/Technologies.xlsx
+  technology_rules: Masterdata/Technology_Rules.xlsx
+  technology_cost_library: Masterdata/Technology_Cost_Library.xlsx
+  machine: Masterdata/Machine.xlsx
 
 hpdc_defaults:
   annual_volume: 25000
   part_weight_kg: 0.85
   casting_yield: 0.65
   cycle_time_s: 35.0
+  layout_factor: 1.25
   cavities: 1
   oee: 0.75
   scrap_rate: 0.03

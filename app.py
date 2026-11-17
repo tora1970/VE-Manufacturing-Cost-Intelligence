@@ -1,5 +1,9 @@
 import streamlit as st
 
+from agents.hpdc_agent import render_hpdc_agent
+from services.config import load_settings
+from services.github_loader import GitHubExcelLoader
+from services.masterdata_service import MasterDataService
 from services.masterdata_repository import masterdata
 from services.machine_rate_resolution import (
     resolve_machine_rate,
@@ -22,6 +26,14 @@ st.set_page_config(
     page_icon="📊",
     layout="wide"
 )
+
+
+@st.cache_resource
+def hpdc_service_context(settings: dict) -> MasterDataService:
+    return MasterDataService(
+        GitHubExcelLoader.from_settings(settings),
+        settings["masterdata"],
+    )
 
 
 # =====================================================
@@ -54,9 +66,10 @@ st.caption("Digital Cost Intelligence Platform")
 # MAIN NAVIGATION
 # =====================================================
 
-tab_technology, tab_masterdata, tab_system = st.tabs(
+tab_technology, tab_hpdc, tab_masterdata, tab_system = st.tabs(
     [
         "Technologies",
+        "HPDC Should-cost",
         "Masterdata",
         "System"
     ]
@@ -123,7 +136,6 @@ with tab_technology:
         technology = st.selectbox(
             "Select Technology",
             [
-                "HPDC",
                 "CNC Machining",
                 "Injection Molding",
                 "Sand Casting",
@@ -809,6 +821,19 @@ with tab_technology:
         "Simple payback is an undiscounted screening metric and is not ROI, IRR "
         "or NPV."
     )
+# =====================================================
+# HPDC
+# =====================================================
+
+with tab_hpdc:
+    try:
+        hpdc_settings = load_settings()
+        hpdc_service = hpdc_service_context(hpdc_settings)
+        render_hpdc_agent(hpdc_service, hpdc_settings)
+    except Exception as exc:
+        st.error(f"HPDC masterdata configuration failed: {exc}")
+
+
 # =====================================================
 # MASTERDATA
 # =====================================================

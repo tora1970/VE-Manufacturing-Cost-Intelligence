@@ -11,17 +11,28 @@ Edit `config/settings.yaml`:
 - `github.branch`
 - paths under `masterdata`
 
-The supplied defaults assume the masterdata repository is named `VEMCI-Masterdata` and owned by `tora1970`. Change these values if the actual owner or repository name differs.
+The supplied defaults use the configured VEMCI repository and central `Masterdata/` directory. Change these values if the repository or branch differs.
 
 ## 2. Required Excel columns
 
 The loader accepts several column aliases. At minimum provide:
 
-- `materials/Materials.xlsx` or `hpdc/Alloys.xlsx`: material/alloy name and material price in EUR/kg
-- `regions/Regions.xlsx`: region/country and labour rate in EUR/h
-- `hpdc/Machines.xlsx`: machine name/ID and machine rate in EUR/h
+- `Masterdata/Materials.xlsx`: material/alloy name and material price in EUR/kg
+- `Masterdata/Regions.xlsx`: region/country and labour rate in EUR/h
+- `Masterdata/Machine.xlsx` (configured as `masterdata.machine`):
+  `Process`, `Size`, `Machine Hour Rate €/h`, `Max Part Size` (two dimensions),
+  and `Max Part Weight` (kg). HPDC is mapped to the source process `Die Casting`;
+  available classes are evaluated in Small, Medium, Large order.
 
 Recognised examples are documented in `agents/hpdc_agent.py`.
+
+The HPDC-specific workflow is available in the **HPDC Should-cost** tab. Its
+cycle-time prediction currently uses `hpdc_defaults.cycle_time_s` as a
+configurable baseline because this repository does not yet contain a cycle-time
+prediction equation. An optional user override is applied to all production
+calculations. Estimated cavity layout dimensions use the configurable
+`hpdc_defaults.layout_factor` (default `1.25`) and are not validated die-design
+dimensions.
 
 ## 3. Public or private masterdata
 

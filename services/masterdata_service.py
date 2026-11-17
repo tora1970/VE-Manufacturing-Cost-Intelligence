@@ -60,12 +60,14 @@ class MasterDataService:
     def technology_cost_library(self, force_refresh: bool = False) -> pd.DataFrame:
         return self._load("technology_cost_library", force_refresh)
 
+    def machine(self, force_refresh: bool = False) -> pd.DataFrame:
+        return self._load("machine", force_refresh)
+
     def hpdc_machines(self, force_refresh: bool = False) -> pd.DataFrame:
-        return self._load("hpdc_machines", force_refresh)
+        return self.machine(force_refresh)
 
     def hpdc_alloys(self, force_refresh: bool = False) -> pd.DataFrame:
-        key = "hpdc_alloys" if self.paths.get("hpdc_alloys") else "materials"
-        return self._load(key, force_refresh)
+        return self.materials(force_refresh)
 
     def hpdc_parameters(self, force_refresh: bool = False) -> pd.DataFrame:
         return self._load("hpdc_parameters", force_refresh)
@@ -81,6 +83,7 @@ class MasterDataService:
         return sorted(frame[column].dropna().astype(str).str.strip().unique().tolist())
 
     def machine_options(self) -> list[str]:
-        frame = self.hpdc_machines()
-        column = find_column(frame, ["Machine", "Machine Name", "Machine ID", "Name"])
-        return sorted(frame[column].dropna().astype(str).str.strip().unique().tolist())
+        frame = self.machine()
+        column = find_column(frame, ["Size"])
+        available = set(frame[column].dropna().astype(str).str.strip().tolist())
+        return [size for size in ("Small", "Medium", "Large") if size in available]

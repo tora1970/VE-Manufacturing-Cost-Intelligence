@@ -3,9 +3,12 @@ import pytest
 
 from services.machine_rate_resolution import (
     resolve_injection_molding_machine_rate,
+    resolve_hpdc_machine,
     resolve_machine_rate,
     technology_name_mapping,
 )
+from services.config import load_settings
+from services.masterdata_service import MasterDataError, MasterDataService
 
 
 @pytest.fixture
@@ -232,3 +235,120 @@ def test_injection_molding_invalid_rate_is_unavailable(rate):
         None,
         "unavailable",
     )
+
+
+def hpdc_machine_data():
+    return pd.DataFrame(
+        {
+            "Process": ["Die Casting", "Die Casting", "Die Casting"],
+            "Size": ["Small", "Medium", "Large"],
+            "Machine Hour Rate €/h": [70.0, 85.0, 110.0],
+            "Max Part Size": ["300 x 200 mm", "500 x 400 mm", "800 x 600 mm"],
+            "Max Part Weight": [10.0, 25.0, 60.0],
+        }
+    )
+
+
+def test_hpdc_selects_smallest_eligible_machine():
+    selection = resolve_hpdc_machine(hpdc_machine_data(), 200, 150, 8)
+    assert selection.size == "Small"
+    assert selection.machine_hour_rate_eur_hr == 70.0
+    assert selection.process == "Die Casting"
+    assert selection.selection_method == "Smallest eligible machine class"
+
+
+@pytest.mark.parametrize(
+    ("layout_length", "layout_width", "shot_weight"),
+    [
+        (350.0, 150.0, 8.0),
+        (200.0, 150.0, 11.0),
+    ],
+)
+def test_hpdc_selects_medium_when_small_fails(
+    layout_length, layout_width, shot_weight
+):
+    selection = resolve_hpdc_machine(
+        hpdc_machine_data(), layout_length, layout_width, shot_weight
+    )
+    assert selection.size == "Medium"
+    assert selection.machine_hour_rate_eur_hr == 85.0
+
+
+def test_hpdc_layout_rotation_can_make_a_machine_eligible():
+    data = hpdc_machine_data().iloc[[0]].copy()
+    data.loc[data.index[0], "Max Part Size"] = "300 x 400 mm"
+    selection = resolve_hpdc_machine(data, 350, 250, 8)
+    assert selection.size == "Small"
+    assert "fits rotated" in selection.selection_reason
+
+
+def test_hpdc_no_eligible_machine_reports_required_and_available_capacity():
+    with pytest.raises(ValueError) as error:
+        resolve_hpdc_machine(hpdc_machine_data(), 900, 700, 70)
+    message = str(error.value)
+    assert "900 x 700 mm" in message
+    assert "70 kg" in message
+    assert "800 x 600 mm" in message
+    assert "60 kg" in message
+    assert "layout size and shot weight" in message
+
+
+def test_hpdc_source_process_alias_does_not_mutate_masterdata():
+    data = hpdc_machine_data()
+    original = data.copy(deep=True)
+    selection = resolve_hpdc_machine(data, 200, 150, 8)
+    assert technology_name_mapping["HPDC"] == "Die Casting"
+    assert selection.process == "Die Casting"
+    pd.testing.assert_frame_equal(data, original)
+
+
+def test_hpdc_machine_rate_comes_from_masterdata_workbook_path():
+    class Loader:
+        def __init__(self):
+            self.path = None
+            self.force_refresh = False
+
+        def load_excel(self, path, force_refresh=False):
+            self.path = path
+            self.force_refresh = force_refresh
+            return hpdc_machine_data()
+
+    loader = Loader()
+    settings = load_settings()
+    service = MasterDataService(loader, settings["masterdata"])
+    selection = resolve_hpdc_machine(
+        service.hpdc_machines(force_refresh=True), 200, 150, 8
+    )
+    assert loader.path == "Masterdata/Machine.xlsx"
+    assert "hpdc_machines" not in settings["masterdata"]
+    assert loader.force_refresh
+    assert selection.machine_hour_rate_eur_hr == 70.0
+
+
+def test_hpdc_materials_use_the_shared_central_materials_path():
+    class Loader:
+        def __init__(self):
+            self.paths = []
+
+        def load_excel(self, path, force_refresh=False):
+            self.paths.append(path)
+            return pd.DataFrame(
+                {"Material": ["A380"], "Material Price EUR/kg": [2.5]}
+            )
+
+    loader = Loader()
+    settings = load_settings()
+    service = MasterDataService(loader, settings["masterdata"])
+    assert service.hpdc_alloys()["Material"].tolist() == ["A380"]
+    assert loader.paths == ["Masterdata/Materials.xlsx"]
+
+
+@pytest.mark.parametrize(
+    "size",
+    ["not a size", "-300 x 200 mm", "300 x 200 x 100 mm"],
+)
+def test_hpdc_invalid_machine_size_data_is_rejected(size):
+    data = hpdc_machine_data()
+    data.loc[0, "Max Part Size"] = size
+    with pytest.raises(MasterDataError, match="Max Part Size"):
+        resolve_hpdc_machine(data, 200, 150, 8)
