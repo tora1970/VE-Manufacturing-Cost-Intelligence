@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import asdict
 
 import pandas as pd
@@ -29,9 +30,9 @@ def _lookup_numeric(
     return float(value)
 
 
-def _material_price(service: MasterDataService, material: str) -> float:
-    frame = service.hpdc_alloys()
-    return _lookup_numeric(
+def _material_price_from_record(record: pd.Series, material: str) -> float:
+    frame = record.to_frame().T
+    price = _lookup_numeric(
         frame,
         material,
         ["Material", "Material Name", "Alloy", "Alloy Name", "Name"],
@@ -46,6 +47,15 @@ def _material_price(service: MasterDataService, material: str) -> float:
             "Price per kg",
         ],
     )
+    if not math.isfinite(price) or price <= 0:
+        raise MasterDataError(
+            f"Material price for '{material}' must be finite and greater than zero."
+        )
+    return price
+
+
+def _material_price(service: MasterDataService, material: str) -> float:
+    return _material_price_from_record(service.material_record(material), material)
 
 
 def _labour_rate(service: MasterDataService, region: str) -> float:
@@ -127,6 +137,23 @@ def render_hpdc_agent(service: MasterDataService, settings: dict) -> None:
                 step=0.5,
             )
             material = st.selectbox("Material / alloy", materials)
+            material_record = None
+            material_price = None
+            material_error = None
+            try:
+                material_record = service.material_record(material)
+                material_price = _material_price_from_record(material_record, material)
+            except MasterDataError as exc:
+                material_error = str(exc)
+            if material_price is None:
+                st.error(f"Material masterdata error: {material_error}")
+            else:
+                st.text_input(
+                    "Material Price [EUR/kg]",
+                    value=f"{material_price:.2f}",
+                    disabled=True,
+                )
+                st.caption("Material source: Masterdata/Materials.xlsx")
         with middle:
             part_length = st.number_input(
                 "Part Length [mm]", min_value=0.0, value=0.0, step=1.0
@@ -196,9 +223,20 @@ def render_hpdc_agent(service: MasterDataService, settings: dict) -> None:
             f"Estimated cavity layout uses a configurable layout factor of {layout_factor:g}; "
             "it is not a validated die design."
         )
-        submitted = st.form_submit_button("Calculate should-cost", type="primary")
+        st.caption(
+            "Materials.xlsx has no process-compatibility field; all materials in the "
+            "masterdata list are shown."
+        )
+        submitted = st.form_submit_button(
+            "Calculate should-cost",
+            type="primary",
+            disabled=material_price is None,
+        )
 
     if not submitted:
+        return
+    if material_record is None or material_price is None:
+        st.error("A valid selected material record and price are required.")
         return
 
     try:
@@ -221,7 +259,7 @@ def render_hpdc_agent(service: MasterDataService, settings: dict) -> None:
         data = HPDCInput(
             annual_volume=int(annual_volume),
             part_weight_kg=float(net_part_weight),
-            material_price_eur_kg=_material_price(service, material),
+            material_price_eur_kg=material_price,
             casting_yield=float(metal_yield) / 100,
             cycle_time_s=cycle_time_predicted,
             cavities=cavities,

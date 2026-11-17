@@ -17,7 +17,8 @@ The supplied defaults use the configured VEMCI repository and central `Masterdat
 
 The loader accepts several column aliases. At minimum provide:
 
-- `Masterdata/Materials.xlsx`: material/alloy name and material price in EUR/kg
+- `Masterdata/Materials.xlsx`: `Material_ID`, `Material_Name`, `Material_Group`,
+  `Density`, and `Default_Price_EUR_kg`
 - `Masterdata/Regions.xlsx`: region/country and labour rate in EUR/h
 - `Masterdata/Machine.xlsx` (configured as `masterdata.machine`):
   `Process`, `Size`, `Machine Hour Rate €/h`, `Max Part Size` (two dimensions),
@@ -25,6 +26,11 @@ The loader accepts several column aliases. At minimum provide:
   available classes are evaluated in Small, Medium, Large order.
 
 Recognised examples are documented in `agents/hpdc_agent.py`.
+
+The current Materials workbook does not define process compatibility or
+material recovery value. HPDC therefore displays the full masterdata material
+list until process compatibility is recorded (for example, in a
+`Compatible_Processes` field containing `Die Casting`).
 
 The HPDC-specific workflow is available in the **HPDC Should-cost** tab. Its
 cycle-time prediction currently uses `hpdc_defaults.cycle_time_s` as a

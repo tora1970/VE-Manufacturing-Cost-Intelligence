@@ -333,14 +333,25 @@ def test_hpdc_materials_use_the_shared_central_materials_path():
         def load_excel(self, path, force_refresh=False):
             self.paths.append(path)
             return pd.DataFrame(
-                {"Material": ["A380"], "Material Price EUR/kg": [2.5]}
+                {
+                    "Material_ID": ["A380"],
+                    "Material_Name": ["A380"],
+                    "Material_Group": ["Aluminium"],
+                    "Density": [2740],
+                    "Default_Price_EUR_kg": [2.9],
+                }
             )
 
     loader = Loader()
     settings = load_settings()
     service = MasterDataService(loader, settings["masterdata"])
-    assert service.hpdc_alloys()["Material"].tolist() == ["A380"]
-    assert loader.paths == ["Masterdata/Materials.xlsx"]
+    assert service.material_options() == ["A380"]
+    record = service.material_record("A380")
+    assert record["Default_Price_EUR_kg"] == 2.9
+    assert loader.paths == [
+        "Masterdata/Materials.xlsx",
+        "Masterdata/Materials.xlsx",
+    ]
 
 
 @pytest.mark.parametrize(

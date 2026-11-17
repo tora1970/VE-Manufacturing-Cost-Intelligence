@@ -3,6 +3,7 @@ import pytest
 
 from agents.hpdc_agent import _labour_rate, _material_price
 from models.hpdc import HPDCInput, HPDCModel, calculate_cavity_layout
+from services.masterdata_service import MasterDataError, MasterDataService
 
 
 def test_hpdc_calculation_is_positive():
@@ -169,15 +170,26 @@ def test_metal_yield_and_process_scrap_are_separate():
 
 
 def test_hpdc_lookups_accept_central_masterdata_columns():
-    class Service:
-        def hpdc_alloys(self):
-            return pd.DataFrame(
-                {
-                    "Material_Name": ["A380"],
-                    "Default_Price_EUR_kg": [2.9],
-                }
-            )
+    material_data = pd.DataFrame(
+        {
+            "Material_ID": ["A380", "ADC12"],
+            "Material_Name": ["A380", "ADC12"],
+            "Material_Group": ["Aluminium", "Aluminium"],
+            "Density": [2740, 2750],
+            "Default_Price_EUR_kg": [2.9, 2.8],
+        }
+    )
 
+    class Loader:
+        def load_excel(self, path, force_refresh=False):
+            assert path == "Masterdata/Materials.xlsx"
+            return material_data
+
+    service = MasterDataService(Loader(), {"materials": "Masterdata/Materials.xlsx"})
+    assert _material_price(service, "A380") == pytest.approx(2.9)
+    assert _material_price(service, "ADC12") == pytest.approx(2.8)
+
+    class RegionService:
         def regions(self):
             return pd.DataFrame(
                 {
@@ -186,8 +198,55 @@ def test_hpdc_lookups_accept_central_masterdata_columns():
                 }
             )
 
-    assert _material_price(Service(), "A380") == pytest.approx(2.9)
-    assert _labour_rate(Service(), "Austria") == pytest.approx(27.6)
+    assert _labour_rate(RegionService(), "Austria") == pytest.approx(27.6)
+
+
+def test_hpdc_material_cost_uses_the_selected_masterdata_price():
+    class Service:
+        def __init__(self):
+            self.materials = pd.DataFrame(
+                {
+                    "Material_Name": ["A380", "ADC12"],
+                    "Default_Price_EUR_kg": [2.9, 2.8],
+                }
+            )
+
+        def material_record(self, name):
+            return self.materials.loc[
+                self.materials["Material_Name"] == name
+            ].iloc[0]
+
+    service = Service()
+    a380 = HPDCModel().calculate(
+        production_input(material_price_eur_kg=_material_price(service, "A380"))
+    )
+    adc12 = HPDCModel().calculate(
+        production_input(material_price_eur_kg=_material_price(service, "ADC12"))
+    )
+    assert a380.material_cost == pytest.approx(0.2 / 0.8 * 2.9)
+    assert adc12.material_cost == pytest.approx(0.2 / 0.8 * 2.8)
+    assert a380.material_cost != adc12.material_cost
+
+
+def test_missing_hpdc_material_is_a_controlled_masterdata_error():
+    class Loader:
+        def load_excel(self, path, force_refresh=False):
+            return pd.DataFrame(
+                {"Material_Name": ["A380"], "Default_Price_EUR_kg": [2.9]}
+            )
+
+    service = MasterDataService(Loader(), {"materials": "Masterdata/Materials.xlsx"})
+    with pytest.raises(MasterDataError, match="was not found"):
+        _material_price(service, "Unknown alloy")
+
+
+def test_missing_hpdc_material_price_is_a_controlled_masterdata_error():
+    class Service:
+        def material_record(self, name):
+            return pd.Series({"Material_Name": name, "Density": 2740})
+
+    with pytest.raises(MasterDataError, match="expected columns"):
+        _material_price(Service(), "A380")
 
 
 def test_preliminary_layout_estimate_uses_configurable_factor():

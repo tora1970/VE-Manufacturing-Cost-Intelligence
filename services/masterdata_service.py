@@ -8,6 +8,9 @@ import pandas as pd
 from services.github_loader import GitHubExcelLoader
 
 
+MATERIAL_NAME_COLUMNS = ("Material", "Material Name", "Alloy", "Alloy Name", "Name")
+
+
 class MasterDataError(RuntimeError):
     pass
 
@@ -69,13 +72,35 @@ class MasterDataService:
     def hpdc_alloys(self, force_refresh: bool = False) -> pd.DataFrame:
         return self.materials(force_refresh)
 
+    def material_record(self, material_name: str) -> pd.Series:
+        frame = self.materials()
+        name_column = find_column(frame, MATERIAL_NAME_COLUMNS)
+        matches = frame[
+            frame[name_column]
+            .astype("string")
+            .str.strip()
+            .str.casefold()
+            .eq(material_name.strip().casefold())
+            .fillna(False)
+        ]
+        if matches.empty:
+            raise MasterDataError(
+                f"'{material_name}' was not found in masterdata column '{name_column}'."
+            )
+        if len(matches) > 1:
+            raise MasterDataError(
+                f"'{material_name}' matches multiple rows in masterdata column '{name_column}'."
+            )
+        return matches.iloc[0].copy()
+
     def hpdc_parameters(self, force_refresh: bool = False) -> pd.DataFrame:
         return self._load("hpdc_parameters", force_refresh)
 
     def material_options(self) -> list[str]:
-        frame = self.hpdc_alloys()
-        column = find_column(frame, ["Material", "Material Name", "Alloy", "Alloy Name", "Name"])
-        return sorted(frame[column].dropna().astype(str).str.strip().unique().tolist())
+        frame = self.materials()
+        column = find_column(frame, MATERIAL_NAME_COLUMNS)
+        options = frame[column].dropna().astype(str).str.strip().unique().tolist()
+        return sorted(option for option in options if option)
 
     def region_options(self) -> list[str]:
         frame = self.regions()
