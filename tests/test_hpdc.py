@@ -74,6 +74,64 @@ def production_input(**overrides):
     return HPDCInput(**values)
 
 
+def test_material_overhead_defaults_to_five_percent_of_material_cost():
+    result = HPDCModel().calculate(production_input())
+
+    assert production_input().material_overhead_pct == 5.0
+    assert result.material_overhead_pct == 5.0
+    assert result.material_overhead_cost_eur == pytest.approx(
+        round(result.material_cost_per_good_part * 0.05, 4)
+    )
+
+
+def test_material_overhead_override_uses_only_material_and_is_not_in_production_base():
+    data = production_input(
+        material_overhead_pct=25.0,
+        overhead_rate=0.2,
+        trim_required=False,
+    )
+    result = HPDCModel().calculate(data)
+
+    assert result.material_overhead_pct == 25.0
+    assert result.material_overhead_cost_eur == pytest.approx(
+        round(result.material_cost_per_good_part * 0.25, 4)
+    )
+    assert result.overhead_base_per_good_part == pytest.approx(
+        result.machine_cost_per_good_part + result.labour_cost_per_good_part
+    )
+    assert result.overhead_cost == pytest.approx(
+        round(result.overhead_base_per_good_part * data.overhead_rate, 4)
+    )
+    assert result.recurring_manufacturing_should_cost == pytest.approx(
+        result.material_cost_per_good_part
+        + result.material_overhead_cost_eur
+        + result.machine_cost_per_good_part
+        + result.labour_cost_per_good_part
+        + result.overhead_cost,
+        abs=3e-5,
+    )
+
+
+def test_zero_material_overhead_adds_no_cost():
+    result = HPDCModel().calculate(
+        production_input(material_overhead_pct=0.0)
+    )
+
+    assert result.material_overhead_pct == 0.0
+    assert result.material_overhead_cost_eur == 0.0
+
+
+@pytest.mark.parametrize(
+    "material_overhead_pct",
+    [-0.01, 100.0, float("nan"), float("inf"), True],
+)
+def test_invalid_material_overhead_percent_is_rejected(material_overhead_pct):
+    with pytest.raises(ValueError, match="material_overhead_pct"):
+        HPDCModel().calculate(
+            production_input(material_overhead_pct=material_overhead_pct)
+        )
+
+
 def test_one_cavity_with_zero_process_scrap():
     result = HPDCModel().calculate(
         production_input(
@@ -188,9 +246,11 @@ def test_trim_machine_cost_is_not_required_when_trim_is_disabled():
     assert result.trim_machine_cost_status == "not_required"
     assert result.recurring_manufacturing_should_cost == pytest.approx(
         result.material_cost_per_good_part
+        + result.material_overhead_cost_eur
         + result.machine_cost_per_good_part
         + result.labour_cost_per_good_part
-        + result.overhead_cost
+        + result.overhead_cost,
+        abs=3e-5,
     )
 
 
@@ -257,6 +317,28 @@ def test_trim_machine_cost_uses_existing_trim_cycle_capacity(
         expected_cost_per_good_part
     )
     assert result.trim_machine_cost_status == "calculated"
+
+
+def test_trim_masterdata_selection_and_rate_source_are_exposed_in_result():
+    result = HPDCModel().calculate(
+        production_input(
+            trim_cycle_time_s=10.0,
+            trim_parts_per_cycle=1,
+            trim_machine="Trim / Medium",
+            trim_machine_rate_eur_hr=30.0,
+            trim_machine_rate_source="Masterdata/Machine.xlsx",
+        )
+    )
+
+    assert result.trim_machine == "Trim / Medium"
+    assert result.trim_machine_rate_eur_hr == 30.0
+    assert result.trim_machine_rate_source == "Masterdata/Machine.xlsx"
+    assert result.trim_machine_cost_eur_per_good_part == pytest.approx(
+        result.trim_machine_time_per_shot_s
+        / 3600
+        * result.trim_machine_rate_eur_hr
+        / result.good_parts_per_shot
+    )
 
 
 def test_fractional_trim_cycles_are_used_without_rounding_for_cost():
@@ -429,9 +511,11 @@ def test_process_scrap_is_applied_once_to_each_recurring_cost_component():
     assert result.tooling_cost == 0.0
     assert result.recurring_manufacturing_should_cost == pytest.approx(
         result.material_cost_per_good_part
+        + result.material_overhead_cost_eur
         + result.machine_cost_per_good_part
         + result.labour_cost_per_good_part
-        + result.overhead_cost
+        + result.overhead_cost,
+        abs=3e-5,
     )
 
 
@@ -482,11 +566,14 @@ def test_reference_case_separates_recurring_cost_from_tooling_capex():
         0.7231737206410747
     )
     assert result.overhead_cost == pytest.approx(0.08678084647692895, abs=0.00005)
+    assert result.material_overhead_cost_eur == pytest.approx(
+        result.material_cost_per_good_part * 0.05, abs=0.00005
+    )
     assert result.recurring_manufacturing_should_cost == pytest.approx(
-        4.719550126198098
+        4.915029904152102
     )
     assert result.annual_recurring_manufacturing_cost == pytest.approx(
-        47195.50
+        49150.30
     )
     assert result.tooling_investment_eur == 120000
     assert result.tool_life_shots == 150000

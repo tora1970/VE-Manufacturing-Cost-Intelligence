@@ -35,6 +35,16 @@ class HPDCMachineSelection:
         return f"{self.max_part_length_mm:g} x {self.max_part_width_mm:g} mm"
 
 
+@dataclass(frozen=True)
+class TrimMachineSelection:
+    machine: str
+    size: str | None
+    machine_hour_rate_eur_hr: float
+    rate_source: str
+    selection_method: str
+    selection_reason: str
+
+
 def _parse_max_part_size(value: object, machine_size: str) -> tuple[float, float]:
     if not isinstance(value, str):
         raise MasterDataError(
@@ -218,6 +228,177 @@ def resolve_hpdc_machine(
         f"{largest.max_part_weight_kg:g} kg. Failed constraints: "
         f"{' and '.join(failed_constraints)}."
     )
+
+
+def _trim_machine_rows(machine_data: pd.DataFrame) -> pd.DataFrame:
+    if not isinstance(machine_data, pd.DataFrame) or machine_data.empty:
+        raise MasterDataError("Machine masterdata is empty or unavailable.")
+
+    process_column = find_column(machine_data, ["Process"])
+    trim_rows = machine_data[
+        machine_data[process_column]
+        .astype("string")
+        .str.strip()
+        .str.casefold()
+        .eq("trim")
+        .fillna(False)
+    ].copy()
+    if trim_rows.empty:
+        raise MasterDataError(
+            "No Trim machines were found in Machine.xlsx masterdata "
+            "(Process='Trim')."
+        )
+    return trim_rows
+
+
+def _trim_machine_identities(trim_rows: pd.DataFrame) -> pd.Series:
+    size_column = find_column(trim_rows, ["Size"])
+    sizes = trim_rows[size_column].astype("string").str.strip()
+    if sizes.isna().any() or sizes.eq("").any() or sizes.str.casefold().duplicated().any():
+        raise MasterDataError(
+            "Process + Size must uniquely identify Trim machines in Machine.xlsx."
+        )
+    return "Trim / " + sizes
+
+
+def trim_machine_options(machine_data: pd.DataFrame) -> list[str]:
+    if not isinstance(machine_data, pd.DataFrame) or machine_data.empty:
+        raise MasterDataError("Machine masterdata is empty or unavailable.")
+    process_column = find_column(machine_data, ["Process"])
+    process = (
+        machine_data[process_column]
+        .astype("string")
+        .str.strip()
+        .str.casefold()
+        .eq("trim")
+        .fillna(False)
+    )
+    if not process.any():
+        return []
+    trim_rows = machine_data.loc[process].copy()
+    return _trim_machine_identities(trim_rows).tolist()
+
+
+def resolve_trim_machine(
+    machine_data: pd.DataFrame,
+    required_part_length_mm: float,
+    required_part_width_mm: float,
+    part_weight_kg: float,
+    selected_machine: str | None = None,
+) -> TrimMachineSelection:
+    trim_rows = _trim_machine_rows(machine_data)
+    identities = _trim_machine_identities(trim_rows)
+    trim_rows = trim_rows.assign(_trim_machine_identity=identities.to_numpy())
+
+    rate_column = find_column(trim_rows, ["Machine Hour Rate €/h"])
+    size_column = find_column(trim_rows, ["Size"], required=False)
+
+    if selected_machine is not None:
+        matches = trim_rows[
+            trim_rows["_trim_machine_identity"]
+            .astype(str)
+            .str.strip()
+            .str.casefold()
+            .eq(selected_machine.strip().casefold())
+        ]
+        if len(matches) != 1:
+            raise MasterDataError(
+                f"Selected Trim machine {selected_machine!r} is not a unique "
+                "Trim machine in Machine.xlsx."
+            )
+        row = matches.iloc[0]
+        machine = str(row["_trim_machine_identity"])
+        size = str(row[size_column]).strip() if size_column else None
+        rate = _parse_positive_number(row[rate_column], rate_column, machine)
+        return TrimMachineSelection(
+            machine=machine,
+            size=size,
+            machine_hour_rate_eur_hr=rate,
+            rate_source="Masterdata/Machine.xlsx (manual selection)",
+            selection_method="User-selected Trim machine",
+            selection_reason=f"{machine} was explicitly selected from Trim machine masterdata.",
+        )
+
+    for label, value in {
+        "required_part_length_mm": required_part_length_mm,
+        "required_part_width_mm": required_part_width_mm,
+        "part_weight_kg": part_weight_kg,
+    }.items():
+        if not math.isfinite(value) or value <= 0:
+            raise ValueError(f"{label} must be finite and greater than zero.")
+
+    missing_columns = [
+        name
+        for name, aliases in (
+            ("Size", ["Size"]),
+            ("Max Part Size", ["Max Part Size"]),
+            ("Max Part Weight", ["Max Part Weight"]),
+        )
+        if find_column(trim_rows, aliases, required=False) is None
+    ]
+    if missing_columns:
+        raise MasterDataError(
+            "Automatic Trim machine selection is ambiguous. Add the following "
+            "capability fields to Machine.xlsx: "
+            f"{', '.join(missing_columns)}. Select a Trim machine explicitly "
+            "in the UI in the meantime."
+        )
+
+    assert size_column is not None
+    max_size_column = find_column(trim_rows, ["Max Part Size"])
+    max_weight_column = find_column(trim_rows, ["Max Part Weight"])
+    candidates: list[tuple[tuple[int, float, float, str], TrimMachineSelection]] = []
+    for _, row in trim_rows.iterrows():
+        machine = str(row["_trim_machine_identity"])
+        raw_size = str(row[size_column]).strip()
+        size_key = raw_size.casefold()
+        if size_key not in _HPDC_MACHINE_SIZE_ORDER:
+            raise MasterDataError(
+                f"Unsupported Trim machine Size {raw_size!r}; expected Small, Medium, or Large."
+            )
+        max_length, max_width = _parse_max_part_size(row[max_size_column], machine)
+        max_weight = _parse_positive_number(
+            row[max_weight_column], max_weight_column, machine
+        )
+        rate = _parse_positive_number(row[rate_column], rate_column, machine)
+        if not _layout_fits(
+            required_part_length_mm,
+            required_part_width_mm,
+            max_length,
+            max_width,
+        ) or part_weight_kg > max_weight:
+            continue
+
+        selection = TrimMachineSelection(
+            machine=machine,
+            size=raw_size,
+            machine_hour_rate_eur_hr=rate,
+            rate_source="Masterdata/Machine.xlsx",
+            selection_method="Smallest eligible machine class",
+            selection_reason=(
+                f"{machine} is the smallest eligible class: the required part "
+                f"dimensions {required_part_length_mm:g} x {required_part_width_mm:g} mm "
+                f"and {part_weight_kg:g} kg weight fit its "
+                f"{max_length:g} x {max_width:g} mm and {max_weight:g} kg limits."
+            ),
+        )
+        sort_key = (
+            _HPDC_MACHINE_SIZE_ORDER[size_key],
+            max_length * max_width,
+            max_weight,
+            machine.casefold(),
+        )
+        candidates.append((sort_key, selection))
+
+    if not candidates:
+        raise MasterDataError(
+            "No Trim machine is suitable for the required "
+            f"{required_part_length_mm:g} x {required_part_width_mm:g} mm "
+            f"part and {part_weight_kg:g} kg part weight. Review Max Part Size "
+            "and Max Part Weight in Machine.xlsx or select a machine explicitly."
+        )
+    candidates.sort(key=lambda candidate: candidate[0])
+    return candidates[0][1]
 
 
 def resolve_machine_rate(

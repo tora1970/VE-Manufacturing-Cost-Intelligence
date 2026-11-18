@@ -5,10 +5,16 @@ from services.machine_rate_resolution import (
     resolve_injection_molding_machine_rate,
     resolve_hpdc_machine,
     resolve_machine_rate,
+    resolve_trim_machine,
+    trim_machine_options,
     technology_name_mapping,
 )
 from services.config import load_settings
-from services.masterdata_service import MasterDataError, MasterDataService
+from services.masterdata_service import (
+    MasterDataError,
+    MasterDataService,
+    find_column,
+)
 
 
 @pytest.fixture
@@ -363,3 +369,158 @@ def test_hpdc_invalid_machine_size_data_is_rejected(size):
     data.loc[0, "Max Part Size"] = size
     with pytest.raises(MasterDataError, match="Max Part Size"):
         resolve_hpdc_machine(data, 200, 150, 8)
+
+
+def trim_machine_data():
+    return pd.DataFrame(
+        {
+            "Process": ["Trim", "Trim", "Trim", "Die Casting"],
+            "Size": ["Small", "Medium", "Large", "Small"],
+            "Machine Hour Rate €/h": [35.0, 42.5, 65.0, 999.0],
+            "Max Part Size": [
+                "300x300",
+                "800x800",
+                "1500x1500",
+                "2000x2000",
+            ],
+            "Max Part Weight": [1.5, 8.0, 25.0, 100.0],
+        }
+    )
+
+
+def test_trim_masterdata_rows_load_through_configured_machine_workbook_path():
+    class Loader:
+        def __init__(self):
+            self.path = None
+
+        def load_excel(self, path, force_refresh=False):
+            self.path = path
+            return trim_machine_data()
+
+    loader = Loader()
+    settings = load_settings()
+    service = MasterDataService(loader, settings["masterdata"])
+    frame = service.machine()
+    process_column = find_column(frame, ["Process"])
+    trims = frame[frame[process_column].eq("Trim")]
+
+    assert loader.path == "Masterdata/Machine.xlsx"
+    assert len(trims) == 3
+    assert list(zip(trims["Size"], trims["Machine Hour Rate €/h"])) == [
+        ("Small", 35.0),
+        ("Medium", 42.5),
+        ("Large", 65.0),
+    ]
+
+
+def test_trim_options_use_process_and_size_and_exclude_other_processes():
+    assert trim_machine_options(trim_machine_data()) == [
+        "Trim / Small",
+        "Trim / Medium",
+        "Trim / Large",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("size", "expected_rate"),
+    [("Small", 35.0), ("Medium", 42.5), ("Large", 65.0)],
+)
+def test_trim_explicit_selection_reads_rate_from_masterdata(size, expected_rate):
+    selection = resolve_trim_machine(
+        trim_machine_data(), 100, 100, 1, selected_machine=f"Trim / {size}"
+    )
+
+    assert selection.machine == f"Trim / {size}"
+    assert selection.size == size
+    assert selection.machine_hour_rate_eur_hr == expected_rate
+    assert "Masterdata/Machine.xlsx" in selection.rate_source
+
+
+def test_trim_rate_changes_when_masterdata_rate_changes():
+    data = trim_machine_data()
+    data.loc[data["Size"] == "Small", "Machine Hour Rate €/h"] = 37.0
+
+    selection = resolve_trim_machine(
+        data, 100, 100, 1, selected_machine="Trim / Small"
+    )
+
+    assert selection.machine_hour_rate_eur_hr == 37.0
+
+
+def test_trim_automatic_selection_uses_smallest_capable_machine_and_rate():
+    data = trim_machine_data()
+    selection = resolve_trim_machine(data, 200, 150, 1.2)
+    reordered_selection = resolve_trim_machine(
+        data.sample(frac=1, random_state=7), 200, 150, 1.2
+    )
+
+    assert selection.machine == "Trim / Small"
+    assert selection.size == "Small"
+    assert selection.machine_hour_rate_eur_hr == 35.0
+    assert selection.rate_source == "Masterdata/Machine.xlsx"
+    assert selection.selection_method == "Smallest eligible machine class"
+    assert reordered_selection.machine == selection.machine
+    assert reordered_selection.machine_hour_rate_eur_hr == selection.machine_hour_rate_eur_hr
+
+
+def test_trim_max_part_size_is_respected():
+    selection = resolve_trim_machine(
+        trim_machine_data(), 301, 250, 1.0
+    )
+
+    assert selection.machine == "Trim / Medium"
+    assert selection.size == "Medium"
+
+
+def test_trim_max_part_weight_is_respected():
+    selection = resolve_trim_machine(trim_machine_data(), 100, 100, 1.6)
+
+    assert selection.machine == "Trim / Medium"
+    assert selection.size == "Medium"
+
+
+def test_trim_manual_selection_resolves_selected_trim_machine_rate():
+    selection = resolve_trim_machine(
+        trim_machine_data(), 1600, 1600, 30, selected_machine="Trim / Large"
+    )
+
+    assert selection.machine == "Trim / Large"
+    assert selection.machine_hour_rate_eur_hr == 65.0
+    assert "manual selection" in selection.rate_source
+
+
+def test_trim_automatic_selection_reports_insufficient_capability_data():
+    data = trim_machine_data().drop(columns=["Max Part Size", "Max Part Weight"])
+
+    with pytest.raises(MasterDataError, match="Automatic Trim machine selection is ambiguous"):
+        resolve_trim_machine(data, 200, 150, 1)
+
+    assert resolve_trim_machine(
+        data, 200, 150, 1, selected_machine="Trim / Medium"
+    ).machine_hour_rate_eur_hr == 42.5
+
+
+def test_trim_selection_reports_when_no_machine_is_suitable():
+    with pytest.raises(MasterDataError, match="No Trim machine is suitable"):
+        resolve_trim_machine(trim_machine_data(), 1501, 1501, 26)
+
+
+def test_trim_selection_reports_when_masterdata_contains_no_trim_machines():
+    data = pd.DataFrame(
+        {
+            "Process": ["Die Casting"],
+            "Machine Hour Rate €/h": [70.0],
+        }
+    )
+
+    assert trim_machine_options(data) == []
+    with pytest.raises(MasterDataError, match="No Trim machines were found"):
+        resolve_trim_machine(data, 100, 100, 1)
+
+
+def test_trim_process_and_size_must_uniquely_identify_rows():
+    data = trim_machine_data().iloc[:2].copy()
+    data.loc[data.index[1], "Size"] = "Small"
+
+    with pytest.raises(MasterDataError, match="Process \\+ Size"):
+        trim_machine_options(data)

@@ -19,7 +19,11 @@ from services.hpdc_cycle_time import (
     HPDCCycleTimeInput,
     HPDCCycleTimeParameters,
 )
-from services.machine_rate_resolution import resolve_hpdc_machine
+from services.machine_rate_resolution import (
+    resolve_hpdc_machine,
+    resolve_trim_machine,
+    trim_machine_options,
+)
 from services.masterdata_service import MasterDataError, MasterDataService, find_column
 from services.result_store import ResultStore
 
@@ -106,6 +110,7 @@ def render_hpdc_agent(service: MasterDataService, settings: dict) -> None:
         materials = service.material_options()
         regions = service.region_options()
         machine_data = service.hpdc_machines()
+        trim_machines = trim_machine_options(machine_data)
     except Exception as exc:
         st.error(f"Masterdata could not be loaded: {exc}")
         st.info("Check repository owner, repository name, branch, file paths and Excel column names in config/settings.yaml.")
@@ -267,10 +272,17 @@ def render_hpdc_agent(service: MasterDataService, settings: dict) -> None:
                 value=float(defaults["overhead_rate"]) * 100,
                 step=1.0,
             )
+            material_overhead_pct = st.number_input(
+                "Material Overhead [%]",
+                min_value=0.0,
+                max_value=99.0,
+                value=float(defaults.get("material_overhead_pct", 5.0)),
+                step=0.5,
+            )
         trim_required = st.checkbox("Trim required", value=True)
         trim_cycle_time = None
         trim_parts_per_cycle = None
-        trim_machine_rate_text = ""
+        trim_machine_choice = None
         if trim_required:
             trim_parts_per_cycle = st.number_input(
                 "Trim Parts per Cycle",
@@ -282,15 +294,22 @@ def render_hpdc_agent(service: MasterDataService, settings: dict) -> None:
                     "provided to the model."
                 ),
             )
-            trim_machine_rate_text = st.text_input(
-                "Trim Machine Rate [EUR/hr]",
-                value="",
-                help=(
-                    "Optional trim-press machine-only rate. Excludes direct "
-                    "labour, indirect overhead and supplier margin. Leave "
-                    "blank if unavailable."
-                ),
-            )
+            if trim_machines:
+                trim_machine_choice = st.selectbox(
+                    "Trim Machine",
+                    ["Automatic (smallest suitable)", *trim_machines],
+                    help=(
+                        "Automatic selection uses Trim machine size, maximum "
+                        "part size and maximum part weight from Machine.xlsx. "
+                        "Choose a machine explicitly to override selection."
+                    ),
+                )
+            else:
+                st.error(
+                    "No Trim machines are defined in Machine.xlsx masterdata. "
+                    "Add Process='Trim' machine rows with a machine rate before "
+                    "calculating trim cost."
+                )
             use_trim_cycle_override = st.checkbox(
                 "Enter trim cycle time"
             )
@@ -319,7 +338,7 @@ def render_hpdc_agent(service: MasterDataService, settings: dict) -> None:
         submitted = st.form_submit_button(
             "Calculate should-cost",
             type="primary",
-            disabled=material_price is None,
+            disabled=material_price is None or (trim_required and not trim_machines),
         )
 
     if not submitted:
@@ -354,6 +373,22 @@ def render_hpdc_agent(service: MasterDataService, settings: dict) -> None:
             layout_width,
             total_shot_weight,
         )
+        trim_machine = (
+            resolve_trim_machine(
+                machine_data,
+                float(part_length),
+                float(part_width),
+                float(net_part_weight),
+                selected_machine=(
+                    trim_machine_choice
+                    if trim_machine_choice
+                    != "Automatic (smallest suitable)"
+                    else None
+                ),
+            )
+            if trim_required
+            else None
+        )
         data = HPDCInput(
             annual_volume=int(annual_volume),
             part_weight_kg=float(net_part_weight),
@@ -381,6 +416,7 @@ def render_hpdc_agent(service: MasterDataService, settings: dict) -> None:
             part_height_mm=float(part_height),
             metal_yield=float(metal_yield) / 100,
             cycle_time_predicted_s=cycle_time_predicted,
+            material_overhead_pct=float(material_overhead_pct),
             cycle_time_override_s=(
                 float(cycle_time_override) if cycle_time_override is not None else None
             ),
@@ -405,10 +441,12 @@ def render_hpdc_agent(service: MasterDataService, settings: dict) -> None:
                 if trim_parts_per_cycle is not None
                 else None
             ),
+            trim_machine=trim_machine.machine if trim_machine else None,
             trim_machine_rate_eur_hr=(
-                float(trim_machine_rate_text)
-                if trim_machine_rate_text.strip()
-                else None
+                trim_machine.machine_hour_rate_eur_hr if trim_machine else None
+            ),
+            trim_machine_rate_source=(
+                trim_machine.rate_source if trim_machine else None
             ),
         )
         result = CostEngine().calculate(HPDCModel(), data)
@@ -513,6 +551,7 @@ def render_hpdc_agent(service: MasterDataService, settings: dict) -> None:
                 ),
                 ("Effective Production Takt [s]", result.effective_takt_s),
                 ("Trim Bottleneck", result.trim_bottleneck),
+                ("Selected Trim Machine", result.trim_machine),
                 ("Trim Machine Rate [EUR/hr]", result.trim_machine_rate_eur_hr),
                 ("Trim Machine Rate Source", result.trim_machine_rate_source),
                 (
@@ -526,6 +565,11 @@ def render_hpdc_agent(service: MasterDataService, settings: dict) -> None:
                 (
                     "Trim Machine Cost per Good Part [EUR]",
                     result.trim_machine_cost_eur_per_good_part,
+                ),
+                ("Material Overhead [%]", result.material_overhead_pct),
+                (
+                    "Material Overhead [EUR/part]",
+                    result.material_overhead_cost_eur,
                 ),
                 ("Trim Machine Cost Status", result.trim_machine_cost_status),
                 (
@@ -557,6 +601,10 @@ def render_hpdc_agent(service: MasterDataService, settings: dict) -> None:
                 (
                     "Material Cost per Good Part [EUR]",
                     result.material_cost_per_good_part,
+                ),
+                (
+                    "Material Overhead [EUR/part]",
+                    result.material_overhead_cost_eur,
                 ),
                 (
                     "Machine Cost per Gross Part [EUR]",
@@ -595,13 +643,15 @@ def render_hpdc_agent(service: MasterDataService, settings: dict) -> None:
         {
             "Cost element": [
                 "Material",
+                "Material Overhead",
                 "HPDC Machine",
                 "Labour",
-                "Overhead",
+                "Production Overhead",
                 "Trim Machine Cost",
             ],
             f"{currency}/pc": [
                 result.material_cost,
+                result.material_overhead_cost_eur,
                 result.machine_cost,
                 result.labour_cost,
                 result.overhead_cost,

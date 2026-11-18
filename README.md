@@ -64,15 +64,25 @@ if trimmed individually, it uses one part per trim cycle and four trim cycles
 per shot. VEMCI reuses its existing `good_parts_per_shot` and
 `trim_cycles_per_shot` outputs for these calculations.
 
-An optional `trim_machine_rate_eur_hr` adds a separate **Trim Machine Cost**
-using the trim press's actual processing time per HPDC shot. This is a
-machine-only amount; direct labour, indirect overhead and supplier margin are
-excluded. The rate must be entered explicitly because current HPDC machine
-masterdata resolves casting presses, not trim presses. If the rate is omitted,
-trim capacity is still reported, trim-machine cost outputs are zero, and status
-is `rate_missing` (the missing rate is not treated as an actual zero rate).
-An explicit zero rate is accepted and reported as a calculated zero cost,
-consistent with VEMCI's machine-cost calculator.
+Trim machine selection and rates come from `Masterdata/Machine.xlsx` rows with
+`Process=Trim`. `Process + Size` identifies a Trim machine. Automatic
+selection compares the part's dimensions and weight with `Max Part Size` and
+`Max Part Weight`, then selects the first capable class in Small, Medium, Large
+order. If the capability fields are missing, the UI allows explicit selection
+from the Trim rows while still resolving the rate from masterdata.
+
+The runtime loader fetches the configured GitHub `masterdata.machine` path
+through a cache, so an existing cached workbook can remain in use until its
+configured TTL expires or it is refreshed. The current refreshed runtime
+workbook contains Trim / Small, Trim / Medium, and Trim / Large rows with rates
+of 35, 42.5, and 65 EUR/h, respectively; the rate used is always the value in
+the loaded workbook.
+
+The resolved trim-machine rate adds a separate **Trim Machine Cost** using the
+trim station's required processing time per HPDC shot. This is a machine-only
+amount; direct labour, indirect overhead and supplier margin are excluded.
+When no suitable Trim machine can be resolved, the calculation reports the
+masterdata issue rather than substituting an engineering rate.
 
 For example, with four good parts per shot, a 10 s trim cycle and a €30/hr
 trim-machine rate, processing all four parts together takes 10 s/shot and costs
@@ -84,11 +94,14 @@ trimming is not further expanded; the model uses the existing good-parts and
 trim-cycles outputs without adding scrap-stage logic.
 
 HPDC recurring manufacturing cost is reported per good part as material,
-machine, labour, and production overhead. Material, machine, and labour costs
-are normalized for process yield exactly once; metal yield remains a separate
-material-weight adjustment. Overhead is applied to good-part machine and labour
-costs only. Tooling investment and tool life are reported separately as project
-CAPEX, with gross tool life calculated as shots multiplied by cavities.
+material overhead, machine, labour, trim, and production overhead. Material
+overhead defaults to 5.0% and applies only to the material cost per good part.
+Material, machine, labour, and trim costs are normalized for process yield
+according to the existing model; metal yield remains a separate material-weight
+adjustment. Production overhead remains applied only to good-part machine and
+labour costs and excludes material overhead. Tooling investment and tool life
+are reported separately as project CAPEX, with gross tool life calculated as
+shots multiplied by cavities.
 
 ## 3. Public or private masterdata
 

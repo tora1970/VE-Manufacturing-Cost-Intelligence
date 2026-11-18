@@ -101,6 +101,9 @@ class HPDCInput:
     trim_cycle_time_s: float | None = None
     trim_parts_per_cycle: int | None = None
     trim_machine_rate_eur_hr: float | None = None
+    material_overhead_pct: float = 5.0
+    trim_machine: str | None = None
+    trim_machine_rate_source: str | None = None
 
     @property
     def effective_cavities(self) -> int:
@@ -127,6 +130,17 @@ class HPDCInput:
         return self.cycle_time_override_s if self.cycle_time_override_s is not None else self.predicted_cycle_time_s
 
     def validate(self) -> None:
+        if (
+            isinstance(self.material_overhead_pct, bool)
+            or not isinstance(self.material_overhead_pct, Real)
+            or not math.isfinite(self.material_overhead_pct)
+        ):
+            raise ValueError("material_overhead_pct must be a finite number.")
+        if not 0 <= self.material_overhead_pct < 100:
+            raise ValueError(
+                "material_overhead_pct must be at least 0 and less than 100."
+            )
+
         finite_values = {
             "annual_volume": self.annual_volume,
             "part_weight_kg": self.effective_net_part_weight_kg,
@@ -281,6 +295,8 @@ class CostBreakdown:
     labour_cost_per_gross_part: float
     labour_cost_per_good_part: float
     overhead_base_per_good_part: float
+    material_overhead_pct: float
+    material_overhead_cost_eur: float
     recurring_manufacturing_should_cost: float
     annual_recurring_manufacturing_cost: float
     tooling_investment_eur: float
@@ -327,6 +343,7 @@ class CostBreakdown:
     trim_time_required_per_shot_s: float = 0.0
     effective_takt_s: float | None = None
     trim_bottleneck: bool = False
+    trim_machine: str | None = None
     trim_machine_rate_eur_hr: float | None = None
     trim_machine_rate_source: str = "missing"
     trim_machine_time_per_shot_s: float = 0.0
@@ -396,7 +413,7 @@ class HPDCModel:
             trim_time_required_per_shot if data.trim_required else 0.0
         )
         trim_machine_rate_source = (
-            "user_input"
+            data.trim_machine_rate_source or "user_input"
             if data.trim_machine_rate_eur_hr is not None
             else "missing"
         )
@@ -460,12 +477,16 @@ class HPDCModel:
             effective_cycle_h * data.labour_rate_eur_h * data.operators / cavities
         )
         labour_cost_per_good_part = labour_cost_per_gross_part / process_yield
+        material_overhead_cost_per_good_part = (
+            material_cost_per_good_part * data.material_overhead_pct / 100
+        )
         overhead_base_per_good_part = (
             machine_cost_per_good_part + labour_cost_per_good_part
         )
         overhead_cost = overhead_base_per_good_part * data.overhead_rate
         recurring_manufacturing_should_cost = (
             material_cost_per_good_part
+            + material_overhead_cost_per_good_part
             + machine_cost_per_good_part
             + labour_cost_per_good_part
             + overhead_cost
@@ -542,6 +563,7 @@ class HPDCModel:
             trim_time_required_per_shot_s=trim_time_required_per_shot,
             effective_takt_s=effective_takt,
             trim_bottleneck=trim_bottleneck,
+            trim_machine=data.trim_machine,
             trim_machine_rate_eur_hr=data.trim_machine_rate_eur_hr,
             trim_machine_rate_source=trim_machine_rate_source,
             trim_machine_time_per_shot_s=trim_machine_time_per_shot,
@@ -557,6 +579,10 @@ class HPDCModel:
             labour_cost_per_gross_part=labour_cost_per_gross_part,
             labour_cost_per_good_part=labour_cost_per_good_part,
             overhead_base_per_good_part=overhead_base_per_good_part,
+            material_overhead_pct=data.material_overhead_pct,
+            material_overhead_cost_eur=round(
+                material_overhead_cost_per_good_part, 4
+            ),
             recurring_manufacturing_should_cost=(
                 recurring_manufacturing_should_cost
             ),
