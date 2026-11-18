@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import math
 from dataclasses import asdict, dataclass
+from numbers import Real
 from typing import Any
+
+from services.machine_cost_calculation import calculate_machine_cost
 
 
 def calculate_cavity_layout(
@@ -94,6 +97,10 @@ class HPDCInput:
     limiting_constraint: str | None = None
     nominal_wall_thickness_mm: float | None = None
     cycle_time_prediction_method: str | None = None
+    trim_required: bool = True
+    trim_cycle_time_s: float | None = None
+    trim_parts_per_cycle: int | None = None
+    trim_machine_rate_eur_hr: float | None = None
 
     @property
     def effective_cavities(self) -> int:
@@ -140,6 +147,37 @@ class HPDCInput:
         for name, value in finite_values.items():
             if not math.isfinite(value):
                 raise ValueError(f"{name} must be finite.")
+
+        if not isinstance(self.trim_required, bool):
+            raise ValueError("trim_required must be a boolean.")
+        if self.trim_cycle_time_s is not None:
+            if (
+                isinstance(self.trim_cycle_time_s, bool)
+                or not isinstance(self.trim_cycle_time_s, Real)
+                or not math.isfinite(self.trim_cycle_time_s)
+                or self.trim_cycle_time_s <= 0
+            ):
+                raise ValueError(
+                    "trim_cycle_time_s must be finite and greater than zero."
+                )
+        if self.trim_parts_per_cycle is not None and (
+            isinstance(self.trim_parts_per_cycle, bool)
+            or not isinstance(self.trim_parts_per_cycle, int)
+            or self.trim_parts_per_cycle < 1
+        ):
+            raise ValueError(
+                "trim_parts_per_cycle must be an integer greater than or equal to 1."
+            )
+        if self.trim_machine_rate_eur_hr is not None and (
+            isinstance(self.trim_machine_rate_eur_hr, bool)
+            or not isinstance(self.trim_machine_rate_eur_hr, Real)
+            or not math.isfinite(self.trim_machine_rate_eur_hr)
+            or self.trim_machine_rate_eur_hr < 0
+        ):
+            raise ValueError(
+                "trim_machine_rate_eur_hr must be finite and greater than "
+                "or equal to zero."
+            )
 
         cavity_count = self.effective_cavities
         if isinstance(cavity_count, bool) or not isinstance(cavity_count, int) or cavity_count < 1:
@@ -280,6 +318,22 @@ class CostBreakdown:
     rejected_parts_year: float | None = None
     required_shots_year: float | None = None
     machine_hours_year: float | None = None
+    hpdc_cycle_time_s: float | None = None
+    trim_required: bool = True
+    trim_cycle_time_s: float | None = None
+    trim_cycle_time_source: str | None = None
+    trim_parts_per_cycle: int | None = None
+    trim_cycles_per_shot: float = 0.0
+    trim_time_required_per_shot_s: float = 0.0
+    effective_takt_s: float | None = None
+    trim_bottleneck: bool = False
+    trim_machine_rate_eur_hr: float | None = None
+    trim_machine_rate_source: str = "missing"
+    trim_machine_time_per_shot_s: float = 0.0
+    trim_machine_cost_per_shot_eur: float = 0.0
+    trim_machine_cost_eur_per_good_part: float = 0.0
+    trim_machine_cost_status: str = "rate_missing"
+
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
@@ -313,6 +367,80 @@ class HPDCModel:
         shots_per_hour = 3600 / cycle_time
         gross_parts_per_hour = shots_per_hour * cavities
         good_parts_per_shot = cavities * process_yield
+        trim_cycle_time = None
+        trim_cycle_time_source = None
+        trim_parts_per_cycle = None
+        trim_cycles_per_shot = 0.0
+        trim_time_required_per_shot = 0.0
+        trim_bottleneck = False
+        if data.trim_required:
+            if data.trim_cycle_time_s is None:
+                trim_cycle_time = cycle_time * 0.167
+                trim_cycle_time_source = (
+                    "Default engineering assumption: 16.7% of HPDC cycle "
+                    "(not masterdata)"
+                )
+            else:
+                trim_cycle_time = float(data.trim_cycle_time_s)
+                trim_cycle_time_source = "User-entered"
+            trim_parts_per_cycle = data.trim_parts_per_cycle or 1
+            trim_cycles_per_shot = (
+                good_parts_per_shot / trim_parts_per_cycle
+            )
+            trim_time_required_per_shot = (
+                trim_cycles_per_shot * trim_cycle_time
+            )
+            trim_bottleneck = trim_time_required_per_shot > cycle_time
+        effective_takt = max(cycle_time, trim_time_required_per_shot)
+        trim_machine_time_per_shot = (
+            trim_time_required_per_shot if data.trim_required else 0.0
+        )
+        trim_machine_rate_source = (
+            "user_input"
+            if data.trim_machine_rate_eur_hr is not None
+            else "missing"
+        )
+        trim_machine_cost_per_shot = 0.0
+        trim_machine_cost_per_good_part = 0.0
+        if not data.trim_required:
+            trim_machine_cost_status = "not_required"
+        elif data.trim_machine_rate_eur_hr is None:
+            trim_machine_cost_status = "rate_missing"
+        else:
+            if good_parts_per_shot <= 0:
+                raise ValueError(
+                    "good_parts_per_shot must be greater than zero to "
+                    "calculate trim-machine cost."
+                )
+            if (
+                not math.isfinite(trim_cycles_per_shot)
+                or trim_cycles_per_shot < 0
+                or not math.isfinite(trim_machine_time_per_shot)
+                or trim_machine_time_per_shot < 0
+            ):
+                raise ValueError(
+                    "Trim-machine time and cycles per shot must be finite "
+                    "and non-negative."
+                )
+            calculated_trim_machine_cost, trim_machine_cost_status = (
+                calculate_machine_cost(
+                    trim_machine_time_per_shot,
+                    data.trim_machine_rate_eur_hr,
+                )
+            )
+            if (
+                trim_machine_cost_status != "calculated"
+                or calculated_trim_machine_cost is None
+            ):
+                raise ValueError("Trim-machine cost calculation is not finite.")
+            trim_machine_cost_per_shot = calculated_trim_machine_cost
+            trim_machine_cost_per_good_part = (
+                trim_machine_cost_per_shot / good_parts_per_shot
+            )
+            if not math.isfinite(trim_machine_cost_per_good_part):
+                raise ValueError(
+                    "Trim-machine cost per good part must be finite."
+                )
         good_parts_per_hour = gross_parts_per_hour * process_yield
         gross_parts_required_year = data.annual_volume / process_yield
         rejected_parts_year = gross_parts_required_year - data.annual_volume
@@ -341,6 +469,7 @@ class HPDCModel:
             + machine_cost_per_good_part
             + labour_cost_per_good_part
             + overhead_cost
+            + trim_machine_cost_per_good_part
         )
         annual_recurring_manufacturing_cost = (
             recurring_manufacturing_should_cost * data.annual_volume
@@ -404,6 +533,23 @@ class HPDCModel:
             rejected_parts_year=rejected_parts_year,
             required_shots_year=required_shots_year,
             machine_hours_year=machine_hours_year,
+            hpdc_cycle_time_s=cycle_time,
+            trim_required=data.trim_required,
+            trim_cycle_time_s=trim_cycle_time,
+            trim_cycle_time_source=trim_cycle_time_source,
+            trim_parts_per_cycle=trim_parts_per_cycle,
+            trim_cycles_per_shot=trim_cycles_per_shot,
+            trim_time_required_per_shot_s=trim_time_required_per_shot,
+            effective_takt_s=effective_takt,
+            trim_bottleneck=trim_bottleneck,
+            trim_machine_rate_eur_hr=data.trim_machine_rate_eur_hr,
+            trim_machine_rate_source=trim_machine_rate_source,
+            trim_machine_time_per_shot_s=trim_machine_time_per_shot,
+            trim_machine_cost_per_shot_eur=trim_machine_cost_per_shot,
+            trim_machine_cost_eur_per_good_part=(
+                trim_machine_cost_per_good_part
+            ),
+            trim_machine_cost_status=trim_machine_cost_status,
             material_cost_per_gross_part=material_cost_per_gross_part,
             material_cost_per_good_part=material_cost_per_good_part,
             machine_cost_per_gross_part=machine_cost_per_gross_part,

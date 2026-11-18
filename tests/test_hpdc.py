@@ -87,7 +87,271 @@ def test_one_cavity_with_zero_process_scrap():
     assert result.process_yield == 1
     assert result.gross_parts_per_shot == 1
     assert result.good_parts_per_shot == 1
+    assert result.trim_cycles_per_shot == pytest.approx(1)
+    assert result.trim_time_required_per_shot_s == pytest.approx(40 * 0.167)
     assert result.rejected_parts_year == 0
+
+
+def test_trim_disabled_does_not_change_hpdc_cost_or_takt():
+    with_trim = HPDCModel().calculate(production_input())
+    without_trim = HPDCModel().calculate(
+        production_input(trim_required=False)
+    )
+
+    assert without_trim.trim_required is False
+    assert without_trim.trim_cycle_time_s is None
+    assert without_trim.trim_cycles_per_shot == 0
+    assert without_trim.trim_time_required_per_shot_s == 0
+    assert without_trim.effective_takt_s == pytest.approx(
+        without_trim.hpdc_cycle_time_s
+    )
+    assert without_trim.trim_bottleneck is False
+    assert without_trim.recurring_manufacturing_should_cost == pytest.approx(
+        with_trim.recurring_manufacturing_should_cost
+    )
+
+
+def test_trim_cycle_defaults_to_16_7_percent_of_hpdc_cycle():
+    result = HPDCModel().calculate(
+        production_input(
+            cycle_time_predicted_s=60.0,
+            number_of_cavities=4,
+            cavities=4,
+            process_scrap_rate=0.0,
+        )
+    )
+
+    assert result.hpdc_cycle_time_s == pytest.approx(60)
+    assert result.trim_cycle_time_s == pytest.approx(10.02)
+    assert "engineering assumption" in result.trim_cycle_time_source.lower()
+    assert "not masterdata" in result.trim_cycle_time_source.lower()
+    assert result.good_parts_per_shot == pytest.approx(4)
+    assert result.trim_cycles_per_shot == pytest.approx(4)
+    assert result.trim_time_required_per_shot_s == pytest.approx(40.08)
+    assert result.effective_takt_s == pytest.approx(60)
+    assert result.trim_bottleneck is False
+    assert result.machine_cost_per_good_part == pytest.approx(
+        85 * 60 / (3600 * 4)
+    )
+
+
+def test_user_entered_trim_cycle_time_and_trim_bottleneck():
+    result = HPDCModel().calculate(
+        production_input(
+            cycle_time_predicted_s=60.0,
+            number_of_cavities=4,
+            cavities=4,
+            process_scrap_rate=0.0,
+            trim_cycle_time_s=20.0,
+            trim_parts_per_cycle=1,
+        )
+    )
+
+    assert result.trim_cycle_time_s == pytest.approx(20)
+    assert result.trim_cycle_time_source == "User-entered"
+    assert result.good_parts_per_shot == pytest.approx(4)
+    assert result.trim_cycles_per_shot == pytest.approx(4)
+    assert result.trim_time_required_per_shot_s == pytest.approx(80)
+    assert result.effective_takt_s == pytest.approx(80)
+    assert result.trim_bottleneck is True
+
+
+def test_trim_parts_per_cycle_reduces_station_load_for_multiple_cavities():
+    result = HPDCModel().calculate(
+        production_input(
+            cycle_time_predicted_s=60.0,
+            number_of_cavities=4,
+            cavities=4,
+            process_scrap_rate=0.0,
+            trim_cycle_time_s=10.0,
+            trim_parts_per_cycle=2,
+        )
+    )
+
+    assert result.good_parts_per_shot == pytest.approx(4)
+    assert result.trim_cycles_per_shot == pytest.approx(2)
+    assert result.trim_time_required_per_shot_s == pytest.approx(20)
+    assert result.effective_takt_s == pytest.approx(60)
+    assert result.trim_bottleneck is False
+
+
+def test_trim_machine_cost_is_not_required_when_trim_is_disabled():
+    result = HPDCModel().calculate(
+        production_input(
+            trim_required=False,
+            trim_machine_rate_eur_hr=30.0,
+        )
+    )
+
+    assert result.trim_machine_cost_per_shot_eur == 0
+    assert result.trim_machine_cost_eur_per_good_part == 0
+    assert result.trim_machine_cost_status == "not_required"
+    assert result.recurring_manufacturing_should_cost == pytest.approx(
+        result.material_cost_per_good_part
+        + result.machine_cost_per_good_part
+        + result.labour_cost_per_good_part
+        + result.overhead_cost
+    )
+
+
+def test_missing_trim_machine_rate_preserves_time_without_cost():
+    result = HPDCModel().calculate(
+        production_input(
+            trim_cycle_time_s=10.0,
+            trim_parts_per_cycle=1,
+        )
+    )
+
+    assert result.trim_machine_rate_eur_hr is None
+    assert result.trim_machine_rate_source == "missing"
+    assert result.trim_machine_time_per_shot_s == pytest.approx(19.4)
+    assert result.trim_machine_cost_per_shot_eur == 0
+    assert result.trim_machine_cost_eur_per_good_part == 0
+    assert result.trim_machine_cost_status == "rate_missing"
+
+
+@pytest.mark.parametrize(
+    (
+        "trim_parts_per_cycle",
+        "expected_trim_cycles",
+        "expected_time_per_shot",
+        "expected_cost_per_shot",
+        "expected_cost_per_good_part",
+    ),
+    [
+        (4, 1, 10, 10 / 3600 * 30, (10 / 3600 * 30) / 4),
+        (1, 4, 40, 40 / 3600 * 30, (40 / 3600 * 30) / 4),
+        (2, 2, 20, 20 / 3600 * 30, (20 / 3600 * 30) / 4),
+    ],
+)
+def test_trim_machine_cost_uses_existing_trim_cycle_capacity(
+    trim_parts_per_cycle,
+    expected_trim_cycles,
+    expected_time_per_shot,
+    expected_cost_per_shot,
+    expected_cost_per_good_part,
+):
+    result = HPDCModel().calculate(
+        production_input(
+            cycle_time_predicted_s=60.0,
+            cavities=4,
+            number_of_cavities=4,
+            process_scrap_rate=0.0,
+            trim_cycle_time_s=10.0,
+            trim_parts_per_cycle=trim_parts_per_cycle,
+            trim_machine_rate_eur_hr=30.0,
+        )
+    )
+
+    assert result.good_parts_per_shot == pytest.approx(4)
+    assert result.trim_cycles_per_shot == pytest.approx(expected_trim_cycles)
+    assert result.trim_machine_rate_eur_hr == pytest.approx(30)
+    assert result.trim_machine_rate_source == "user_input"
+    assert result.trim_machine_time_per_shot_s == pytest.approx(
+        expected_time_per_shot
+    )
+    assert result.trim_machine_cost_per_shot_eur == pytest.approx(
+        expected_cost_per_shot
+    )
+    assert result.trim_machine_cost_eur_per_good_part == pytest.approx(
+        expected_cost_per_good_part
+    )
+    assert result.trim_machine_cost_status == "calculated"
+
+
+def test_fractional_trim_cycles_are_used_without_rounding_for_cost():
+    result = HPDCModel().calculate(
+        production_input(
+            process_scrap_rate=0.1,
+            trim_cycle_time_s=10.0,
+            trim_parts_per_cycle=1,
+            trim_machine_rate_eur_hr=30.0,
+        )
+    )
+
+    assert result.trim_cycles_per_shot == pytest.approx(1.8)
+    assert result.trim_machine_time_per_shot_s == pytest.approx(18)
+    assert result.trim_machine_cost_per_shot_eur == pytest.approx(
+        18 / 3600 * 30
+    )
+    assert result.trim_machine_cost_eur_per_good_part == pytest.approx(
+        (18 / 3600 * 30) / 1.8
+    )
+
+
+def test_zero_good_parts_is_rejected_before_trim_cost_division():
+    with pytest.raises(ValueError, match="process_scrap_rate"):
+        HPDCModel().calculate(
+            production_input(
+                process_scrap_rate=1.0,
+                trim_machine_rate_eur_hr=30.0,
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    "rate",
+    [-1.0, float("nan"), float("inf"), float("-inf"), "not numeric", True],
+)
+def test_invalid_trim_machine_rates_are_rejected(rate):
+    with pytest.raises(ValueError, match="trim_machine_rate_eur_hr"):
+        HPDCModel().calculate(
+            production_input(trim_machine_rate_eur_hr=rate)
+        )
+
+
+def test_zero_trim_machine_rate_is_valid_but_distinct_from_missing():
+    result = HPDCModel().calculate(
+        production_input(trim_machine_rate_eur_hr=0.0)
+    )
+
+    assert result.trim_machine_cost_status == "calculated"
+    assert result.trim_machine_rate_source == "user_input"
+    assert result.trim_machine_cost_per_shot_eur == 0
+    assert result.trim_machine_cost_eur_per_good_part == 0
+
+
+def test_trim_machine_cost_is_added_once_without_changing_hpdc_cost_or_capacity():
+    without_rate = HPDCModel().calculate(
+        production_input(
+            cycle_time_predicted_s=60.0,
+            cavities=4,
+            number_of_cavities=4,
+            process_scrap_rate=0.0,
+            trim_cycle_time_s=10.0,
+            trim_parts_per_cycle=4,
+        )
+    )
+    with_rate = HPDCModel().calculate(
+        production_input(
+            cycle_time_predicted_s=60.0,
+            cavities=4,
+            number_of_cavities=4,
+            process_scrap_rate=0.0,
+            trim_cycle_time_s=10.0,
+            trim_parts_per_cycle=4,
+            trim_machine_rate_eur_hr=30.0,
+        )
+    )
+
+    assert with_rate.recurring_manufacturing_should_cost == pytest.approx(
+        without_rate.recurring_manufacturing_should_cost
+        + with_rate.trim_machine_cost_eur_per_good_part
+    )
+    assert with_rate.annual_recurring_manufacturing_cost == pytest.approx(
+        with_rate.recurring_manufacturing_should_cost * 100000
+    )
+    assert with_rate.machine_cost_per_good_part == pytest.approx(
+        without_rate.machine_cost_per_good_part
+    )
+    assert with_rate.hpdc_cycle_time_s == pytest.approx(
+        without_rate.hpdc_cycle_time_s
+    )
+    assert with_rate.effective_takt_s == pytest.approx(
+        without_rate.effective_takt_s
+    )
+    assert with_rate.trim_bottleneck == without_rate.trim_bottleneck
+    assert with_rate.trim_cycles_per_shot == without_rate.trim_cycles_per_shot
 
 
 def test_reference_production_output_with_multiple_cavities_and_scrap():
@@ -443,6 +707,10 @@ def test_preliminary_layout_estimate_uses_configurable_factor():
         ("part_length_mm", 0.0),
         ("cycle_time_predicted_s", 0.0),
         ("cycle_time_override_s", 0.0),
+        ("trim_cycle_time_s", 0.0),
+        ("trim_parts_per_cycle", 0),
+        ("trim_parts_per_cycle", 1.5),
+        ("trim_required", 1),
     ],
 )
 def test_invalid_production_inputs_are_rejected(field, value):

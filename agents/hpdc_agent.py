@@ -267,6 +267,46 @@ def render_hpdc_agent(service: MasterDataService, settings: dict) -> None:
                 value=float(defaults["overhead_rate"]) * 100,
                 step=1.0,
             )
+        trim_required = st.checkbox("Trim required", value=True)
+        trim_cycle_time = None
+        trim_parts_per_cycle = None
+        trim_machine_rate_text = ""
+        if trim_required:
+            trim_parts_per_cycle = st.number_input(
+                "Trim Parts per Cycle",
+                min_value=1,
+                value=1,
+                step=1,
+                help=(
+                    "Defaults to one part per trim cycle if no value is "
+                    "provided to the model."
+                ),
+            )
+            trim_machine_rate_text = st.text_input(
+                "Trim Machine Rate [EUR/hr]",
+                value="",
+                help=(
+                    "Optional trim-press machine-only rate. Excludes direct "
+                    "labour, indirect overhead and supplier margin. Leave "
+                    "blank if unavailable."
+                ),
+            )
+            use_trim_cycle_override = st.checkbox(
+                "Enter trim cycle time"
+            )
+            if use_trim_cycle_override:
+                trim_cycle_time = st.number_input(
+                    "Trim Cycle Time [s]",
+                    min_value=0.1,
+                    value=10.0,
+                    step=0.5,
+                )
+            else:
+                st.caption(
+                    "Default trim time is an engineering assumption equal to "
+                    "16.7% of the effective HPDC cycle time; it is not "
+                    "masterdata."
+                )
         layout_factor = float(defaults["layout_factor"])
         st.caption(
             f"Estimated cavity layout uses a configurable layout factor of {layout_factor:g}; "
@@ -354,6 +394,22 @@ def render_hpdc_agent(service: MasterDataService, settings: dict) -> None:
             selected_machine_max_part_weight_kg=machine.max_part_weight_kg,
             nominal_wall_thickness_mm=float(nominal_wall_thickness),
             cycle_time_prediction_method=cycle_time_estimate.prediction_method,
+            trim_required=trim_required,
+            trim_cycle_time_s=(
+                float(trim_cycle_time)
+                if trim_cycle_time is not None
+                else None
+            ),
+            trim_parts_per_cycle=(
+                int(trim_parts_per_cycle)
+                if trim_parts_per_cycle is not None
+                else None
+            ),
+            trim_machine_rate_eur_hr=(
+                float(trim_machine_rate_text)
+                if trim_machine_rate_text.strip()
+                else None
+            ),
         )
         result = CostEngine().calculate(HPDCModel(), data)
     except Exception as exc:
@@ -362,6 +418,11 @@ def render_hpdc_agent(service: MasterDataService, settings: dict) -> None:
 
     if result.cycle_time_warning:
         st.warning(result.cycle_time_warning)
+    if result.trim_machine_cost_status == "rate_missing":
+        st.info(
+            "Trim Machine Cost was not calculated because no trim-machine "
+            "rate was provided."
+        )
 
     st.subheader("Cycle Time Estimate")
     st.metric(
@@ -427,7 +488,7 @@ def render_hpdc_agent(service: MasterDataService, settings: dict) -> None:
     )
     two.caption(f"Based on {data.annual_volume:,} good parts/year")
     three.metric(
-        "Machine Cost per Good Part",
+        "HPDC Machine Cost per Good Part",
         f"{result.machine_cost_per_good_part:,.4f} {currency}",
     )
 
@@ -435,10 +496,38 @@ def render_hpdc_agent(service: MasterDataService, settings: dict) -> None:
     st.dataframe(
         pd.DataFrame(
             [
+                ("HPDC Cycle Time [s]", result.hpdc_cycle_time_s),
                 ("Predicted Cycle Time [s]", result.cycle_time_predicted_s),
                 ("Cycle Time Override [s]", result.cycle_time_override_s),
                 ("Effective Cycle Time [s]", result.cycle_time_effective_s),
                 ("Cycle Time Source", result.cycle_time_source),
+                ("Trim Required", result.trim_required),
+                ("Trim Cycle Time [s]", result.trim_cycle_time_s),
+                ("Trim Cycle Time Basis", result.trim_cycle_time_source),
+                ("Trim Parts per Cycle", result.trim_parts_per_cycle),
+                ("Good Parts per Shot", result.good_parts_per_shot),
+                ("Trim Cycles per Shot", result.trim_cycles_per_shot),
+                (
+                    "Trim Time Required per Shot [s]",
+                    result.trim_time_required_per_shot_s,
+                ),
+                ("Effective Production Takt [s]", result.effective_takt_s),
+                ("Trim Bottleneck", result.trim_bottleneck),
+                ("Trim Machine Rate [EUR/hr]", result.trim_machine_rate_eur_hr),
+                ("Trim Machine Rate Source", result.trim_machine_rate_source),
+                (
+                    "Trim Machine Time per Shot [s]",
+                    result.trim_machine_time_per_shot_s,
+                ),
+                (
+                    "Trim Machine Cost per Shot [EUR]",
+                    result.trim_machine_cost_per_shot_eur,
+                ),
+                (
+                    "Trim Machine Cost per Good Part [EUR]",
+                    result.trim_machine_cost_eur_per_good_part,
+                ),
+                ("Trim Machine Cost Status", result.trim_machine_cost_status),
                 (
                     "Cycle Time Deviation [%]",
                     (
@@ -495,16 +584,28 @@ def render_hpdc_agent(service: MasterDataService, settings: dict) -> None:
         hide_index=True,
         use_container_width=True,
     )
+    st.caption(
+        "Trim Machine Cost covers trim-press machine time only; it excludes "
+        "direct labour, indirect overhead and supplier margin. Effective "
+        "production takt is a capacity metric, not billable trim-machine time."
+    )
     st.caption(f"Machine selection: {result.machine_selection_reason}")
 
     chart = pd.DataFrame(
         {
-            "Cost element": ["Material", "Machine", "Labour", "Overhead"],
+            "Cost element": [
+                "Material",
+                "HPDC Machine",
+                "Labour",
+                "Overhead",
+                "Trim Machine Cost",
+            ],
             f"{currency}/pc": [
                 result.material_cost,
                 result.machine_cost,
                 result.labour_cost,
                 result.overhead_cost,
+                result.trim_machine_cost_eur_per_good_part,
             ],
         }
     ).set_index("Cost element")
