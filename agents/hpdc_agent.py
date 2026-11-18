@@ -202,6 +202,23 @@ def render_hpdc_agent(service: MasterDataService, settings: dict) -> None:
             part_height = st.number_input(
                 "Part Height [mm]", min_value=0.0, value=0.0, step=1.0
             )
+            part_volume_mm3 = st.number_input(
+                "Part Volume [mm³]",
+                min_value=0.0,
+                value=0.0,
+                step=1000.0,
+                help="Optional solid part volume; enter 0 when unavailable.",
+            )
+            surface_area_mm2 = st.number_input(
+                "Surface Area [mm²]",
+                min_value=0.0,
+                value=0.0,
+                step=1000.0,
+                help=(
+                    "Optional casting surface area; used with volume to "
+                    "adjust cooling for thin or intricate geometry."
+                ),
+            )
             nominal_wall_thickness = st.number_input(
                 "Nominal Wall Thickness [mm]",
                 min_value=cycle_time_parameters.nominal_wall_thickness_min_mm,
@@ -364,6 +381,15 @@ def render_hpdc_agent(service: MasterDataService, settings: dict) -> None:
             HPDCCycleTimeInput(
                 total_shot_weight_kg=total_shot_weight,
                 nominal_wall_thickness_mm=float(nominal_wall_thickness),
+                part_volume_mm3=(
+                    float(part_volume_mm3) if part_volume_mm3 > 0 else None
+                ),
+                surface_area_mm2=(
+                    float(surface_area_mm2) if surface_area_mm2 > 0 else None
+                ),
+                part_length_mm=float(part_length),
+                part_width_mm=float(part_width),
+                part_height_mm=float(part_height),
             )
         )
         cycle_time_predicted = cycle_time_estimate.predicted_cycle_time_s
@@ -473,8 +499,9 @@ def render_hpdc_agent(service: MasterDataService, settings: dict) -> None:
         "casting simulation or measured machine cycle."
     )
     st.caption(
-        "Hold and cooling overlap while the die is closed; the cycle uses "
-        "the longer duration, not their sum."
+        "Hold and cooling are modeled as separate closed-die phases. "
+        "Available part volume, surface area, and bounding dimensions adjust "
+        "the cooling estimate."
     )
     st.dataframe(
         pd.DataFrame(
@@ -490,7 +517,7 @@ def render_hpdc_agent(service: MasterDataService, settings: dict) -> None:
                     f"{cycle_time_estimate.cooling_time_s:.1f} s",
                 ),
                 (
-                    "Closed phase (max)",
+                    "Hold + cooling closed phase",
                     f"{cycle_time_estimate.closed_phase_time_s:.1f} s",
                 ),
                 ("Die open", f"{cycle_time_estimate.die_open_time_s:.1f} s"),

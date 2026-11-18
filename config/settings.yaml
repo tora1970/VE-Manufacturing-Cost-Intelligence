@@ -47,13 +47,25 @@ hpdc_cycle_time_v1:
   nominal_wall_thickness_default_mm: 3.0
   nominal_wall_thickness_min_mm: 0.5
   nominal_wall_thickness_max_mm: 20.0
-  cooling_coefficient_s_per_mm_n: 2.5
+  cooling_coefficient_s_per_mm_n: 3.2777777778
   cooling_exponent: 2.0
-  assumed_fill_rate_kg_s: 1.5
-  minimum_fill_time_s: 0.2
+  reference_volume_mm3: 104600.0
+  volume_exponent: 0.15
+  minimum_volume_factor: 0.65
+  maximum_volume_factor: 1.5
+  reference_surface_area_to_volume_per_mm: 0.7381644359
+  surface_area_to_volume_exponent: 0.2
+  minimum_surface_area_to_volume_factor: 0.7
+  maximum_surface_area_to_volume_factor: 1.5
+  reference_flow_length_mm: 250.0
+  flow_length_exponent: 0.1
+  minimum_flow_length_factor: 0.8
+  maximum_flow_length_factor: 1.25
+  assumed_fill_rate_kg_s: 2.82
+  minimum_fill_time_s: 0.1
   maximum_fill_time_s: 3.0
-  die_close_time_s: 2.0
-  hold_time_s: 2.0
-  die_open_time_s: 2.0
-  ejection_time_s: 1.2
-  spray_handling_time_s: 3.0
+  die_close_time_s: 3.5
+  hold_time_s: 2.5
+  die_open_time_s: 2.5
+  ejection_time_s: 2.5
+  spray_handling_time_s: 8.0

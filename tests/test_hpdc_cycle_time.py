@@ -35,33 +35,28 @@ def test_v1_configuration_replaces_the_fixed_cycle_time_default(settings):
     assert settings["hpdc_cycle_time_v1"]["model_name"] == "Engineering Estimate V1"
 
 
-def test_reference_case_reports_cycle_phases_and_assumptions(
-    calculator, settings
-):
-    defaults = settings["hpdc_defaults"]
-    shot_weight = calculate_total_shot_weight_kg(
-        defaults["part_weight_kg"],
-        defaults["cavities"],
-        defaults["casting_yield"],
-    )
+def test_reference_case_reports_cycle_phases_and_assumptions(calculator):
+    shot_weight = calculate_total_shot_weight_kg(0.282, 1, 1.0)
 
     estimate = calculator.calculate(
         HPDCCycleTimeInput(
             total_shot_weight_kg=shot_weight,
             nominal_wall_thickness_mm=3.0,
+            part_volume_mm3=104600.0,
+            surface_area_mm2=77212.0,
         )
     )
 
-    assert shot_weight == pytest.approx(0.85 / 0.65)
-    assert estimate.raw_fill_time_s == pytest.approx(shot_weight / 1.5)
-    assert estimate.fill_time_s == pytest.approx(shot_weight / 1.5)
-    assert estimate.cooling_time_s == pytest.approx(22.5)
-    assert estimate.closed_phase_time_s == pytest.approx(22.5)
-    assert estimate.predicted_cycle_time_s == pytest.approx(31.5717948718)
+    assert estimate.raw_fill_time_s == pytest.approx(0.1)
+    assert estimate.fill_time_s == pytest.approx(0.1)
+    assert estimate.cooling_time_s == pytest.approx(29.5)
+    assert estimate.closed_phase_time_s == pytest.approx(32.0)
+    assert estimate.predicted_cycle_time_s == pytest.approx(48.6)
+    assert 43 <= estimate.predicted_cycle_time_s <= 55
     assert estimate.prediction_method == "Engineering Estimate V1"
     assert estimate.prediction_version == "V1"
     assert any("configured assumptions" in note for note in estimate.assumption_notes)
-    assert any("overlap" in note for note in estimate.assumption_notes)
+    assert any("separate" in note for note in estimate.assumption_notes)
 
 
 def test_cooling_increases_with_wall_thickness_and_uses_configured_exponent(
@@ -92,9 +87,9 @@ def test_fill_time_changes_with_shot_weight_and_is_bounded(calculator):
         HPDCCycleTimeInput(10.0, nominal_wall_thickness_mm=3.0)
     )
 
-    assert smaller_shot.fill_time_s == pytest.approx(0.2)
-    assert larger_shot.fill_time_s == pytest.approx(0.4)
-    assert below_minimum.fill_time_s == pytest.approx(0.2)
+    assert smaller_shot.fill_time_s == pytest.approx(0.3 / 2.82)
+    assert larger_shot.fill_time_s == pytest.approx(0.6 / 2.82)
+    assert below_minimum.fill_time_s == pytest.approx(0.1)
     assert below_minimum.fill_time_bound_applied == "minimum"
     assert below_minimum.warnings
     assert above_maximum.fill_time_s == pytest.approx(3.0)
@@ -102,21 +97,93 @@ def test_fill_time_changes_with_shot_weight_and_is_bounded(calculator):
     assert above_maximum.warnings
 
 
-def test_hold_and_cooling_overlap_instead_of_being_added(calculator):
+def test_hold_and_cooling_are_added_as_separate_closed_die_phases(calculator):
     parameters = replace(calculator.parameters, hold_time_s=30.0)
     result = HPDCCycleTimeCalculator(parameters).calculate(
         HPDCCycleTimeInput(0.9, nominal_wall_thickness_mm=3.0)
     )
 
-    assert result.closed_phase_time_s == pytest.approx(30.0)
+    assert result.closed_phase_time_s == pytest.approx(
+        result.hold_time_s + result.cooling_time_s
+    )
     assert result.predicted_cycle_time_s == pytest.approx(
         result.die_close_time_s
         + result.fill_time_s
-        + 30.0
+        + result.hold_time_s
+        + result.cooling_time_s
         + result.die_open_time_s
         + result.ejection_time_s
         + result.spray_handling_time_s
     )
+
+
+def test_higher_surface_area_to_volume_ratio_does_not_reduce_cycle(calculator):
+    baseline = calculator.calculate(
+        HPDCCycleTimeInput(
+            0.282,
+            nominal_wall_thickness_mm=3.0,
+            part_volume_mm3=104600.0,
+            surface_area_mm2=77212.0,
+        )
+    )
+    more_complex_geometry = calculator.calculate(
+        HPDCCycleTimeInput(
+            0.282,
+            nominal_wall_thickness_mm=3.0,
+            part_volume_mm3=104600.0,
+            surface_area_mm2=120000.0,
+        )
+    )
+
+    assert (
+        more_complex_geometry.predicted_cycle_time_s
+        >= baseline.predicted_cycle_time_s
+    )
+
+
+def test_smaller_simple_thin_wall_part_is_faster_than_reference(calculator):
+    reference = calculator.calculate(
+        HPDCCycleTimeInput(
+            0.282,
+            nominal_wall_thickness_mm=3.0,
+            part_volume_mm3=104600.0,
+            surface_area_mm2=77212.0,
+            part_length_mm=250.0,
+            part_width_mm=120.0,
+            part_height_mm=40.0,
+        )
+    )
+    smaller_simple_part = calculator.calculate(
+        HPDCCycleTimeInput(
+            0.08,
+            nominal_wall_thickness_mm=1.5,
+            part_volume_mm3=30000.0,
+            surface_area_mm2=12000.0,
+            part_length_mm=80.0,
+            part_width_mm=40.0,
+            part_height_mm=20.0,
+        )
+    )
+
+    assert smaller_simple_part.predicted_cycle_time_s < reference.predicted_cycle_time_s
+
+
+def test_geometry_inputs_must_be_complete_and_positive(calculator):
+    with pytest.raises(HPDCCycleTimeError, match="provided together"):
+        calculator.calculate(
+            HPDCCycleTimeInput(
+                0.282, nominal_wall_thickness_mm=3.0, part_volume_mm3=1000.0
+            )
+        )
+    with pytest.raises(HPDCCycleTimeError, match="greater than zero"):
+        calculator.calculate(
+            HPDCCycleTimeInput(
+                0.282,
+                nominal_wall_thickness_mm=3.0,
+                part_volume_mm3=0.0,
+                surface_area_mm2=100.0,
+            )
+        )
 
 
 @pytest.mark.parametrize(
@@ -156,6 +223,18 @@ def test_missing_or_invalid_v1_configuration_is_reported():
         "nominal_wall_thickness_max_mm": 20.0,
         "cooling_coefficient_s_per_mm_n": 2.5,
         "cooling_exponent": 2.0,
+        "reference_volume_mm3": 104600.0,
+        "volume_exponent": 0.15,
+        "minimum_volume_factor": 0.65,
+        "maximum_volume_factor": 1.5,
+        "reference_surface_area_to_volume_per_mm": 0.7381644359,
+        "surface_area_to_volume_exponent": 0.2,
+        "minimum_surface_area_to_volume_factor": 0.7,
+        "maximum_surface_area_to_volume_factor": 1.5,
+        "reference_flow_length_mm": 250.0,
+        "flow_length_exponent": 0.1,
+        "minimum_flow_length_factor": 0.8,
+        "maximum_flow_length_factor": 1.25,
         "assumed_fill_rate_kg_s": 1.5,
         "minimum_fill_time_s": 3.0,
         "maximum_fill_time_s": 0.2,
@@ -205,6 +284,10 @@ def test_predicted_and_overridden_cycle_times_flow_into_existing_hpdc_costs(
     assert predicted.cycle_time_predicted_s == pytest.approx(
         estimate.predicted_cycle_time_s
     )
+    assert predicted.hpdc_cycle_time_s == pytest.approx(
+        estimate.predicted_cycle_time_s
+    )
+    assert predicted.good_parts_per_shot == pytest.approx(2 * (1 - 0.03))
     assert predicted.cycle_time_effective_s == pytest.approx(
         estimate.predicted_cycle_time_s
     )

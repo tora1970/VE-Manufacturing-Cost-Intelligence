@@ -37,9 +37,13 @@ cycle-time prediction uses the transparent, configurable Engineering Estimate
 V1 assumptions in `hpdc_cycle_time_v1`. The user must enter nominal wall
 thickness; it is not inferred from the part bounding box, weight, or density.
 V1 calculates a bounded fill-time estimate from total shot weight and an
-assumed fill rate, and a wall-thickness screening cooling time. Intensification/
-hold and cooling overlap, so the closed phase uses their maximum rather than
-their sum. Die movement, hold, ejection, and spray/handling times are configured
+assumed fill rate. Its cooling estimate is primarily driven by wall thickness,
+with configurable volume, surface-area-to-volume, and available part
+flow-length factors. Part volume and surface area are optional; when provided
+they must be provided together. Hold and cooling are modeled as separate
+closed-die phases. The phase assumptions are calibrated so the reference case
+(282 g, 104,600 mm³, 77,212 mm², 3.0 mm wall) predicts about 48.6 seconds per
+shot. Die movement, hold, ejection, and spray/handling times are configured
 assumptions, not measured machine data. The estimate is not a casting or
 thermal simulation.
 

@@ -27,6 +27,18 @@ class HPDCCycleTimeParameters:
     nominal_wall_thickness_max_mm: float
     cooling_coefficient_s_per_mm_n: float
     cooling_exponent: float
+    reference_volume_mm3: float
+    volume_exponent: float
+    minimum_volume_factor: float
+    maximum_volume_factor: float
+    reference_surface_area_to_volume_per_mm: float
+    surface_area_to_volume_exponent: float
+    minimum_surface_area_to_volume_factor: float
+    maximum_surface_area_to_volume_factor: float
+    reference_flow_length_mm: float
+    flow_length_exponent: float
+    minimum_flow_length_factor: float
+    maximum_flow_length_factor: float
     assumed_fill_rate_kg_s: float
     minimum_fill_time_s: float
     maximum_fill_time_s: float
@@ -52,6 +64,18 @@ class HPDCCycleTimeParameters:
             "nominal_wall_thickness_max_mm",
             "cooling_coefficient_s_per_mm_n",
             "cooling_exponent",
+            "reference_volume_mm3",
+            "volume_exponent",
+            "minimum_volume_factor",
+            "maximum_volume_factor",
+            "reference_surface_area_to_volume_per_mm",
+            "surface_area_to_volume_exponent",
+            "minimum_surface_area_to_volume_factor",
+            "maximum_surface_area_to_volume_factor",
+            "reference_flow_length_mm",
+            "flow_length_exponent",
+            "minimum_flow_length_factor",
+            "maximum_flow_length_factor",
             "assumed_fill_rate_kg_s",
             "minimum_fill_time_s",
             "maximum_fill_time_s",
@@ -88,6 +112,35 @@ class HPDCCycleTimeParameters:
             if _finite_number(name, getattr(self, name)) <= 0:
                 raise HPDCCycleTimeError(f"{name} must be greater than zero.")
 
+        for name in ("volume_exponent",):
+            if _finite_number(name, getattr(self, name)) < 0:
+                raise HPDCCycleTimeError(f"{name} cannot be negative.")
+
+        for name, minimum, maximum in (
+            (
+                "volume",
+                self.minimum_volume_factor,
+                self.maximum_volume_factor,
+            ),
+            (
+                "surface_area_to_volume",
+                self.minimum_surface_area_to_volume_factor,
+                self.maximum_surface_area_to_volume_factor,
+            ),
+            (
+                "flow_length",
+                self.minimum_flow_length_factor,
+                self.maximum_flow_length_factor,
+            ),
+        ):
+            minimum = _finite_number(f"minimum_{name}_factor", minimum)
+            maximum = _finite_number(f"maximum_{name}_factor", maximum)
+            if minimum <= 0 or maximum < minimum:
+                raise HPDCCycleTimeError(
+                    f"maximum_{name}_factor must be greater than or equal "
+                    f"to a positive minimum_{name}_factor."
+                )
+
         if not (
             self.nominal_wall_thickness_min_mm
             <= self.nominal_wall_thickness_default_mm
@@ -117,6 +170,11 @@ class HPDCCycleTimeParameters:
 class HPDCCycleTimeInput:
     total_shot_weight_kg: float
     nominal_wall_thickness_mm: float | None
+    part_volume_mm3: float | None = None
+    surface_area_mm2: float | None = None
+    part_length_mm: float | None = None
+    part_width_mm: float | None = None
+    part_height_mm: float | None = None
 
 
 @dataclass(frozen=True)
@@ -172,6 +230,75 @@ class HPDCCycleTimeCalculator:
                 f"{self.parameters.nominal_wall_thickness_max_mm:g} mm."
             )
 
+        volume_factor = 1.0
+        surface_area_to_volume_factor = 1.0
+        if (data.part_volume_mm3 is None) != (data.surface_area_mm2 is None):
+            raise HPDCCycleTimeError(
+                "part_volume_mm3 and surface_area_mm2 must be provided together."
+            )
+        if data.part_volume_mm3 is not None and data.surface_area_mm2 is not None:
+            volume = _finite_number("part_volume_mm3", data.part_volume_mm3)
+            surface_area = _finite_number("surface_area_mm2", data.surface_area_mm2)
+            if volume <= 0 or surface_area <= 0:
+                raise HPDCCycleTimeError(
+                    "part_volume_mm3 and surface_area_mm2 must be greater than zero."
+                )
+            volume_factor = min(
+                self.parameters.maximum_volume_factor,
+                max(
+                    self.parameters.minimum_volume_factor,
+                    (volume / self.parameters.reference_volume_mm3)
+                    ** self.parameters.volume_exponent,
+                ),
+            )
+            surface_area_to_volume_ratio = surface_area / volume
+            surface_area_to_volume_factor = min(
+                self.parameters.maximum_surface_area_to_volume_factor,
+                max(
+                    self.parameters.minimum_surface_area_to_volume_factor,
+                    (
+                        surface_area_to_volume_ratio
+                        / self.parameters.reference_surface_area_to_volume_per_mm
+                    )
+                    ** self.parameters.surface_area_to_volume_exponent,
+                ),
+            )
+
+        dimensions = (
+            data.part_length_mm,
+            data.part_width_mm,
+            data.part_height_mm,
+        )
+        flow_length_factor = 1.0
+        if any(dimension is not None for dimension in dimensions):
+            if any(dimension is None for dimension in dimensions):
+                raise HPDCCycleTimeError(
+                    "part_length_mm, part_width_mm, and part_height_mm "
+                    "must be provided together."
+                )
+            finite_dimensions = tuple(
+                _finite_number(name, dimension)
+                for name, dimension in zip(
+                    ("part_length_mm", "part_width_mm", "part_height_mm"),
+                    dimensions,
+                )
+            )
+            if any(dimension <= 0 for dimension in finite_dimensions):
+                raise HPDCCycleTimeError(
+                    "Part dimensions must be greater than zero."
+                )
+            flow_length_factor = min(
+                self.parameters.maximum_flow_length_factor,
+                max(
+                    self.parameters.minimum_flow_length_factor,
+                    (
+                        max(finite_dimensions)
+                        / self.parameters.reference_flow_length_mm
+                    )
+                    ** self.parameters.flow_length_exponent,
+                ),
+            )
+
         raw_fill_time = total_shot_weight / self.parameters.assumed_fill_rate_kg_s
         if not math.isfinite(raw_fill_time):
             raise HPDCCycleTimeError("The raw fill-time calculation is not finite.")
@@ -189,12 +316,15 @@ class HPDCCycleTimeCalculator:
             cooling_time = (
                 self.parameters.cooling_coefficient_s_per_mm_n
                 * wall_thickness**self.parameters.cooling_exponent
+                * volume_factor
+                * surface_area_to_volume_factor
+                * flow_length_factor
             )
         except OverflowError as exc:
             raise HPDCCycleTimeError(
                 "The V1 cooling-time calculation is not finite."
             ) from exc
-        closed_phase_time = max(self.parameters.hold_time_s, cooling_time)
+        closed_phase_time = self.parameters.hold_time_s + cooling_time
         predicted_cycle_time = (
             self.parameters.die_close_time_s
             + fill_time
@@ -214,8 +344,15 @@ class HPDCCycleTimeCalculator:
         assumption_notes = (
             "Configured phase times and fill rate are V1 engineering assumptions, not measured machine data.",
             (
-                "Cooling uses a configurable wall-thickness screening "
-                "relationship, not a thermal simulation."
+                "Cooling uses configurable wall-thickness, volume, "
+                "surface-area-to-volume, and available flow-length screening "
+                "relationships, not a thermal simulation."
+            ),
+            (
+                "Applied cooling multipliers: volume "
+                f"{volume_factor:.3f}, surface-area-to-volume "
+                f"{surface_area_to_volume_factor:.3f}, and flow length "
+                f"{flow_length_factor:.3f}."
             ),
             "Nominal wall thickness is a user engineering input and is not inferred from part dimensions.",
             (
@@ -230,8 +367,8 @@ class HPDCCycleTimeCalculator:
                 f"{self.parameters.maximum_fill_time_s:g} s are configured assumptions."
             ),
             (
-                "Intensification/hold and cooling overlap in the closed phase; "
-                "the model uses the longer duration rather than adding them."
+                "Intensification/hold and cooling are modeled as separate "
+                "closed-die phases."
             ),
             (
                 "Die close, hold, die open, ejection, and spray/handling times "

@@ -210,6 +210,7 @@ def test_user_entered_trim_cycle_time_and_trim_bottleneck():
     assert result.good_parts_per_shot == pytest.approx(4)
     assert result.trim_cycles_per_shot == pytest.approx(4)
     assert result.trim_time_required_per_shot_s == pytest.approx(80)
+    assert result.hpdc_cycle_time_s == pytest.approx(60)
     assert result.effective_takt_s == pytest.approx(80)
     assert result.trim_bottleneck is True
 
